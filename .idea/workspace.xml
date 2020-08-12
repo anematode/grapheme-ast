@@ -2,12 +2,7 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="db5258fe-9000-4165-8b8a-f4b885953c44" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/codeStyles/codeStyleConfig.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/expression_tokenizer.js" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/parser_error.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/tests/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/expression_tokenizer.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/expression_tokenizer.js" afterDir="false" />
     </list>
     <ignored path="$PROJECT_DIR$/.tmp/" />
     <ignored path="$PROJECT_DIR$/temp/" />
@@ -23,8 +18,8 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/src/expression_tokenizer.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="634">
-              <caret line="127" column="8" selection-start-line="127" selection-start-column="8" selection-end-line="127" selection-end-column="8" />
+            <state relative-caret-position="89">
+              <caret line="85" column="127" lean-forward="true" selection-start-line="85" selection-start-column="127" selection-end-line="85" selection-end-column="127" />
             </state>
           </provider>
         </entry>
@@ -57,6 +52,14 @@
       </list>
     </option>
   </component>
+  <component name="FindInProjectRecents">
+    <findStrings>
+      <find>break</find>
+    </findStrings>
+    <replaceStrings>
+      <replace>continue</replace>
+    </replaceStrings>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
@@ -71,8 +74,8 @@
     </option>
   </component>
   <component name="ProjectFrameBounds">
-    <option name="x" value="936" />
-    <option name="y" value="51" />
+    <option name="x" value="311" />
+    <option name="y" value="203" />
     <option name="width" value="2070" />
     <option name="height" value="1160" />
   </component>
@@ -147,23 +150,23 @@
       <option name="presentableId" value="Default" />
       <updated>1596791552574</updated>
       <workItem from="1596791554618" duration="2634000" />
-      <workItem from="1596875286232" duration="9412000" />
+      <workItem from="1596875286232" duration="19937000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="12046000" />
+    <option name="totallyTimeSpent" value="22571000" />
   </component>
   <component name="ToolWindowManager">
-    <frame x="936" y="51" width="2070" height="1160" extended-state="0" />
+    <frame x="311" y="203" width="2070" height="1160" extended-state="0" />
     <editor active="true" />
     <layout>
-      <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.24987799" />
+      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.24987799" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
       <window_info id="Favorites" order="2" side_tool="true" />
       <window_info anchor="bottom" id="Message" order="0" />
       <window_info anchor="bottom" id="Find" order="1" />
-      <window_info active="true" anchor="bottom" id="Run" order="2" visible="true" weight="0.32958803" />
+      <window_info anchor="bottom" id="Run" order="2" visible="true" weight="0.32958803" />
       <window_info anchor="bottom" id="Debug" order="3" weight="0.4" />
       <window_info anchor="bottom" id="Cvs" order="4" weight="0.25" />
       <window_info anchor="bottom" id="Inspection" order="5" weight="0.4" />
@@ -179,18 +182,6 @@
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="1" />
-  </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" type="javascript">
-          <url>file://$PROJECT_DIR$/src/expression_tokenizer.js</url>
-          <line>85</line>
-          <properties lambdaOrdinal="-1" />
-          <option name="timeStamp" value="1" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
   </component>
   <component name="editorHistoryManager">
     <entry file="file://$PROJECT_DIR$/tests/index.html">
@@ -219,8 +210,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/src/expression_tokenizer.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="634">
-          <caret line="127" column="8" selection-start-line="127" selection-start-column="8" selection-end-line="127" selection-end-column="8" />
+        <state relative-caret-position="89">
+          <caret line="85" column="127" lean-forward="true" selection-start-line="85" selection-start-column="127" selection-end-line="85" selection-end-column="127" />
         </state>
       </provider>
     </entry>

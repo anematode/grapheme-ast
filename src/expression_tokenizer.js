@@ -5,6 +5,11 @@
  */
 import {errorInString} from "./parser_error"
 
+// Whether a string is all ASCII characters
+function isASCII(str) {
+  return /^[\x00-\x7F]*$/.test(str);
+}
+
 // The following functions search for tokens of a given type, starting at index i of the string. A return value of -1
 // signifies that no satisfying token was found. A return value of another index signifies that [i, index) is a valid
 // token.
@@ -52,34 +57,72 @@ function isValidVariableName(string) {
   return true
 }
 
-/**
- * Find a variable token starting at index i in string
- * @param string
- * @param startIndex
- */
-function findVariableToken(string, startIndex) {
-  const length = string.length
-
-  // First character must be a valid starting character
-  if (!isValidStartingCharacter(string.charCodeAt(startIndex)))
+function findSimpleVariableToken(string, startIndex, firstChar) {
+  if (!isValidStartingCharacter(firstChar))
     return -1
 
   let i = startIndex + 1
+  const length = string.length
 
   for (; i < length; ++i) {
-    const charCode = string.charCodeAt(i)
-
-    if (!isValidContinuationCharacter(charCode))
+    if (!isValidContinuationCharacter(string.charCodeAt(i)))
       return i
   }
 
   return i
 }
 
-function findStringToken(string, startIndex) {
+/**
+ * Find a variable token starting at index i in string
+ * @param string
+ * @param startIndex
+ * @param firstChar
+ */
+function findVariableToken(string, startIndex, firstChar) {
   const length = string.length
 
-  const firstChar = string.charCodeAt(startIndex)
+  let colonCount = 0
+
+  if (firstChar === 58 && string.charCodeAt(startIndex + 1) === 58) { // starts with ::, which is permitted, so jump after that
+    startIndex += 2
+    colonCount = 2
+  }
+
+  let lastVarEnd = startIndex
+  let i = startIndex
+
+  for (; i < length; ++i) {
+    const charCode = string.charCodeAt(i)
+
+    if (charCode === 58) {
+      if (colonCount === 2) {
+        i = lastVarEnd
+        break
+      } else if (colonCount === 0) {
+        lastVarEnd = i
+      }
+
+      colonCount++
+    } else if (i === startIndex || colonCount === 2) { // starting character needed
+      if (!isValidStartingCharacter(charCode)) {
+        i = lastVarEnd
+        break
+      }
+    } else {
+      if (!isValidContinuationCharacter(charCode)) {
+        break
+      }
+    }
+  }
+
+  if (colonCount === 2)
+    i = lastVarEnd
+
+  return (i === startIndex) ? -1 : i
+}
+
+function findStringToken(string, startIndex, firstChar) {
+  const length = string.length
 
   // code for " and ', respectively
   if (firstChar !== 34 && firstChar !== 39)
@@ -91,58 +134,123 @@ function findStringToken(string, startIndex) {
   for (; i < length; ++i) {
     const char = string.charCodeAt(i)
 
-    // code for backslash
-    if (char === 92) {
-      currentlyEscaping = !currentlyEscaping
-    } else {
-      currentlyEscaping = false
-    }
-
     // Potential end of the string
     if (char === firstChar) {
       if (!currentlyEscaping) {
         return i + 1
       }
     }
+
+    // code for backslash
+    if (char === 92) {
+      currentlyEscaping = !currentlyEscaping
+    } else {
+      currentlyEscaping = false
+    }
   }
 
   return -1
 }
 
-// A number has the structure [0-9]*.?[0-9]+ or [0-9]*.?[0-9]+e[0-9]+. The first regex should be tested last
+// A number has the structure [0-9]*.?[0-9]+ or [0-9]*.?[0-9]+e[-+]?[0-9]+.
 function findNumericToken(string, startIndex) {
-  let i = startIndex
-
   let exponentialFound = false
   let decimalPointFound = false
+
+  let i = startIndex
+  let decimalIndex = 0
+  let exponentialIndex = 0
 
   for (; i < string.length; ++i) {
     const char = string.charCodeAt(i)
 
     if (char === 101 || char === 69) { // matches E or e
-      if (exponentialFound)
-        return i
+      if (exponentialFound || i === startIndex) // e/E can't be the first character
+        break
+
       exponentialFound = true
+      exponentialIndex = i
     } else if (char === 46) { // matches .
-      if (decimalPointFound)
-        
+      if (decimalPointFound) // illegale
+        break
+      if (exponentialFound) {// Then the exponential character is actually not part of the number
+        i = exponentialIndex
+        break
+      }
+      decimalPointFound = true
+      decimalIndex = i
+    } else if (48 <= char && char <= 57) { // matches 0-9, aka always valid
+
+    } else if (char === 45 || char === 43) { // minus/plus symbol, only allowed after e/E
+      if (!exponentialFound)
+        break
+
+      if (i !== exponentialIndex + 1) // must occur immediately after e/E
+        break
+    } else {
+      break
     }
   }
+
+  if (i === startIndex)
+    return -1
+
+  return i
 }
 
 /**
  * Return whether a char code is a whitespace character
- * @param charCode
+ * @param char
  * @returns {boolean}
  */
 function isWhitespace(char) {
   return (char === 0x20 || char === 0x9 || char === 0xa || char === 0xc || char === 0xd || char === 0xa0 || char === 0x2028 || char === 0x2029)
 }
 
+const simpleOperators = {
+  '+': '+',
+  '-': '-',
+  '*': '*',
+  '/': '/',
+  '!': '!',
+  '!!': '!!',
+  '!=': '!=',
+  '==': '==',
+  '=': '==',
+  '<': '<',
+  '>': '>',
+  '<=': '<=',
+  '>=': '>='
+}
+
+const operatorsFollowedByWhitespace = ["and", "or"]
+
+const operatorOrder = Object.keys(simpleOperators).sort((s1, s2) => s2.length - s1.length)
+
+for (let op of operatorsFollowedByWhitespace) {
+  simpleOperators[op] = op
+}
+
+function findOperatorToken(string, startIndex, charCode) {
+  for (let op of operatorOrder) {
+    if (string.startsWith(op, startIndex)) {
+      return startIndex + op.length
+    }
+  }
+
+  for (let op of operatorsFollowedByWhitespace) {
+    if (string.startsWith(op, startIndex) && isWhitespace(string.charCodeAt(startIndex + op.length + 1))) {
+      return startIndex + op.length
+    }
+  }
+
+  return -1
+}
+
 // The tokenizer converts a string expression into a stream of tokens. Each token is an object. All tokens share two
 // properties: the type property, which is the type of the token, and the index property, which is the index of the
 // token.
-function* expressionTokenizer(string, onError = (err) => { throw err }) {
+function expressionTokenizer(string, onError = (err) => { throw err }) {
   if (typeof string !== "string")
     throw new TypeError("expressionTokenizer given a non-string type")
 
@@ -162,7 +270,9 @@ function* expressionTokenizer(string, onError = (err) => { throw err }) {
     currentIndex = tokenIndex
   }
 
-  tokenLoop: while (true) {
+  const tokens = []
+
+  while (true) {
     // March along leading whitespace
     while (true) {
       charCode = string.charCodeAt(currentIndex)
@@ -180,16 +290,19 @@ function* expressionTokenizer(string, onError = (err) => { throw err }) {
 
     switch (charCode) {
       case 40: // (
-        yield { type: "open_paren", index: currentIndex }
+        tokens.push({ type: "open_paren", index: currentIndex })
         break
       case 41: // )
-        yield { type: "close_paren", index: currentIndex }
+        tokens.push({ type: "close_paren", index: currentIndex })
         break
       case 91: // [
-        yield { type: "open_bracket", index: currentIndex }
+        tokens.push({ type: "open_bracket", index: currentIndex })
         break
       case 93: // ]
-        yield { type: "close_bracket", index: currentIndex }
+        tokens.push({ type: "close_bracket", index: currentIndex })
+        break
+      case 124: // |
+        tokens.push({ type: "vertical_bar", index: currentIndex})
         break
       default:
         parenFound = false
@@ -201,21 +314,21 @@ function* expressionTokenizer(string, onError = (err) => { throw err }) {
       continue
     }
 
-    tokenIndex = findVariableToken(string, currentIndex)
+    tokenIndex = findVariableToken(string, currentIndex, charCode)
 
     if (tokenIndex !== -1) {
       const name = getToken()
-      yield { type: "variable", name, index: currentIndex }
+      tokens.push({ type: "variable", name, index: currentIndex })
       advanceCurrentIndex()
 
       continue
     }
 
-    tokenIndex = findStringToken(string, currentIndex)
+    tokenIndex = findStringToken(string, currentIndex, charCode)
 
     if (tokenIndex !== -1) {
       const contents = getToken().slice(1, -1)
-      yield { type: "string", contents, index: currentIndex }
+      tokens.push({ type: "string", contents, index: currentIndex })
       advanceCurrentIndex()
 
       continue
@@ -225,7 +338,17 @@ function* expressionTokenizer(string, onError = (err) => { throw err }) {
 
     if (tokenIndex !== -1) {
       const value = getToken()
-      yield { type: "number", value, index: currentIndex }
+      tokens.push({ type: "number", value, index: currentIndex })
+      advanceCurrentIndex()
+
+      continue
+    }
+
+    tokenIndex = findOperatorToken(string, currentIndex, charCode)
+
+    if (tokenIndex !== -1) {
+      const op = getToken()
+      tokens.push({ type: "operator", op: simpleOperators[op], index: currentIndex })
       advanceCurrentIndex()
 
       continue
@@ -233,6 +356,8 @@ function* expressionTokenizer(string, onError = (err) => { throw err }) {
 
     onError(errorInString(string, currentIndex, "Unrecognized token"))
   }
+
+  return tokens
 }
 
 export {expressionTokenizer, isWhitespace}
