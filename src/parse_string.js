@@ -1,0 +1,4 @@
+
+function parseString(string, options) {
+
+}
