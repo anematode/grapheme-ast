@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="BookmarkManager">
+    <bookmark url="file://$PROJECT_DIR$/src/expression_tokenizer.js" line="590" />
+  </component>
   <component name="ChangeListManager">
     <list default="true" id="db5258fe-9000-4165-8b8a-f4b885953c44" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
@@ -20,17 +23,30 @@
   <component name="FindInProjectRecents">
     <findStrings>
       <find>break</find>
+      <find>lastVarENd</find>
     </findStrings>
     <replaceStrings>
       <replace>continue</replace>
+      <replace>tokens.push(${token})</replace>
     </replaceStrings>
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="IdeDocumentHistory">
+    <option name="CHANGED_PATHS">
+      <list>
+        <option value="$PROJECT_DIR$/src/main.js" />
+        <option value="$PROJECT_DIR$/tests/index.html" />
+        <option value="$PROJECT_DIR$/src/parser_error.js" />
+        <option value="$PROJECT_DIR$/src/parse_string.js" />
+        <option value="$PROJECT_DIR$/src/expression_tokenizer.js" />
+      </list>
+    </option>
+  </component>
   <component name="ProjectFrameBounds">
-    <option name="x" value="311" />
-    <option name="y" value="203" />
+    <option name="x" value="419" />
+    <option name="y" value="124" />
     <option name="width" value="2070" />
     <option name="height" value="1160" />
   </component>
@@ -76,7 +92,7 @@
       <option name="presentableId" value="Default" />
       <updated>1596791552574</updated>
       <workItem from="1596791554618" duration="2634000" />
-      <workItem from="1596875286232" duration="19937000" />
+      <workItem from="1596875286232" duration="31315000" />
     </task>
     <servers />
   </component>

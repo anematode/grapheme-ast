@@ -7,7 +7,7 @@ import {errorInString} from "./parser_error"
 
 // Whether a string is all ASCII characters
 function isASCII(str) {
-  return /^[\x00-\x7F]*$/.test(str);
+  return /^[\x00-\x7F]*$/.test(str)
 }
 
 // The following functions search for tokens of a given type, starting at index i of the string. A return value of -1
@@ -94,7 +94,7 @@ function findVariableToken(string, startIndex, firstChar) {
   for (; i < length; ++i) {
     const charCode = string.charCodeAt(i)
 
-    if (charCode === 58) {
+    if (charCode === 58) { // reached when there is a colon
       if (colonCount === 2) {
         i = lastVarEnd
         break
@@ -103,15 +103,18 @@ function findVariableToken(string, startIndex, firstChar) {
       }
 
       colonCount++
-    } else if (i === startIndex || colonCount === 2) { // starting character needed
-      if (!isValidStartingCharacter(charCode)) {
+    } else if (i === startIndex || colonCount === 2) { // reached when a simple variable token is expected
+      const newI = findSimpleVariableToken(string, i, charCode)
+
+      if (newI === -1) {
         i = lastVarEnd
         break
       }
+
+      i = newI - 1
+      lastVarEnd = newI
     } else {
-      if (!isValidContinuationCharacter(charCode)) {
-        break
-      }
+      break
     }
   }
 
@@ -156,6 +159,7 @@ function findStringToken(string, startIndex, firstChar) {
 function findNumericToken(string, startIndex) {
   let exponentialFound = false
   let decimalPointFound = false
+  let numericFound = false
 
   let i = startIndex
   let decimalIndex = 0
@@ -180,7 +184,7 @@ function findNumericToken(string, startIndex) {
       decimalPointFound = true
       decimalIndex = i
     } else if (48 <= char && char <= 57) { // matches 0-9, aka always valid
-
+      numericFound = true
     } else if (char === 45 || char === 43) { // minus/plus symbol, only allowed after e/E
       if (!exponentialFound)
         break
@@ -192,7 +196,7 @@ function findNumericToken(string, startIndex) {
     }
   }
 
-  if (i === startIndex)
+  if (i === startIndex || !numericFound)
     return -1
 
   return i
@@ -213,6 +217,7 @@ const simpleOperators = {
   '*': '*',
   '/': '/',
   '!': '!',
+  '^': '^',
   '!!': '!!',
   '!=': '!=',
   '==': '==',
@@ -247,12 +252,47 @@ function findOperatorToken(string, startIndex, charCode) {
   return -1
 }
 
+function findFunctionTemplateDefinition(string, startIndex, charCode) {
+  switch (charCode) {
+    case 40: // (
+      return startIndex + 1
+    case 58: // :
+      if (string.charCodeAt(startIndex + 1) === 58) {
+        for (let i = startIndex + 2; i < string.length; ++i) { // search for the next (
+          if (string.charCodeAt(i) === 40) {
+            return i + 1
+          }
+        }
+      }
+  }
+
+  return -1
+}
+
+function findPropertyAccessToken(string, startIndex, charCode) {
+  if (charCode !== 46) // matches '.', which denotes a property access
+    return -1
+
+  // Search for a variable name after '.', which is a valid property access (for example, .a is valid but not .3)
+  return findSimpleVariableToken(string, startIndex + 1, string.charCodeAt(startIndex + 1))
+}
+
+// The paren tokens
+const PAREN_TOKENS = [
+  {type: "paren", paren: '('},
+  {type: "paren", paren: ')'},
+  {type: "paren", paren: '['},
+  {type: "paren", paren: ']'},
+  {type: "paren", paren: '|'}
+]
+
 // The tokenizer converts a string expression into a stream of tokens. Each token is an object. All tokens share two
 // properties: the type property, which is the type of the token, and the index property, which is the index of the
 // token.
-function expressionTokenizer(string, onError = (err) => { throw err }) {
-  if (typeof string !== "string")
+function simpleTokenizer(string) {
+  if (typeof string !== "string") {
     throw new TypeError("expressionTokenizer given a non-string type")
+  }
 
   // Length of the string
   const length = string.length
@@ -286,29 +326,27 @@ function expressionTokenizer(string, onError = (err) => { throw err }) {
     if (currentIndex >= length) // We're done parsing the string!
       break
 
-    let parenFound = true
+    // The remainder of the loop is for finding tokens. The token types are paren, comma, function, variable, string, number, property_access
 
+    let singleCharTokenFound = true
+
+    // Handle simple single-character tokens
     switch (charCode) {
       case 40: // (
-        tokens.push({ type: "open_paren", index: currentIndex })
-        break
       case 41: // )
-        tokens.push({ type: "close_paren", index: currentIndex })
-        break
       case 91: // [
-        tokens.push({ type: "open_bracket", index: currentIndex })
-        break
       case 93: // ]
-        tokens.push({ type: "close_bracket", index: currentIndex })
-        break
       case 124: // |
-        tokens.push({ type: "vertical_bar", index: currentIndex})
+        tokens.push({ type: "paren", paren: String.fromCharCode(charCode), index: currentIndex, pID: -1 })
+        break
+      case 44: // ,
+        tokens.push({ type: "comma", index: currentIndex })
         break
       default:
-        parenFound = false
+        singleCharTokenFound = false
     }
 
-    if (parenFound) {
+    if (singleCharTokenFound) {
       currentIndex++
 
       continue
@@ -318,6 +356,21 @@ function expressionTokenizer(string, onError = (err) => { throw err }) {
 
     if (tokenIndex !== -1) {
       const name = getToken()
+
+      const prospectiveFunctionIndex = tokenIndex
+
+      const functionToken = findFunctionTemplateDefinition(string, prospectiveFunctionIndex, string.charCodeAt(prospectiveFunctionIndex))
+
+      // If a function was found...
+      if (functionToken !== -1) {
+        tokens.push({ type: "function", name: string.slice(currentIndex, functionToken - 1), index: currentIndex })
+        // push a (, since that is included in function
+        tokens.push({ type: "paren", paren: '(', index: functionToken - 1, pID: -1 })
+
+        currentIndex = functionToken
+        continue
+      }
+
       tokens.push({ type: "variable", name, index: currentIndex })
       advanceCurrentIndex()
 
@@ -344,20 +397,210 @@ function expressionTokenizer(string, onError = (err) => { throw err }) {
       continue
     }
 
-    tokenIndex = findOperatorToken(string, currentIndex, charCode)
+    tokenIndex = findPropertyAccessToken(string, currentIndex, charCode)
 
     if (tokenIndex !== -1) {
-      const op = getToken()
-      tokens.push({ type: "operator", op: simpleOperators[op], index: currentIndex })
+      const prop = getToken().slice(1)
+      tokens.push({ type: "property_access", prop, index: currentIndex })
       advanceCurrentIndex()
 
       continue
     }
 
-    onError(errorInString(string, currentIndex, "Unrecognized token"))
+    tokenIndex = findOperatorToken(string, currentIndex, charCode)
+
+    if (tokenIndex !== -1) {
+      const op = getToken()
+      tokens.push({ type: "operator", op: simpleOperators[op], index: currentIndex, implicit: false })
+      advanceCurrentIndex()
+
+      continue
+    }
+
+    throw errorInString(string, currentIndex, "Unrecognized token")
   }
 
   return tokens
 }
 
-export {expressionTokenizer, isWhitespace}
+/**
+ * The function checks whether the tokens are balanced. It also modifies the tokens modifying their pID properties,
+ * signifying for each paren what the corresponding closing/opening paren is. For vertical bars, it also sets their
+ * opening property to true/false, depending on whether the bar is an opening or closing bar.
+ * @param string
+ * @param tokens
+ */
+function checkParensBalanced(string, tokens) {
+  // The stack of parens
+  const stack = []
+
+  // Get the last paren (like .pop() but without mutating the array)
+  function peek() {
+    return stack[stack.length - 1]
+  }
+
+  let id = 0 // id for paren pairs
+
+  // Vertical bars are a bit hard to handle correctly. We assume that, if a bar is encountered and it can be correctly
+  // interpreted as a closing bar, then it IS a closing bar. Otherwise, it is an opening bar. The logic is described below.
+  for (let i = 0; i < tokens.length; ++i) {
+    const token = tokens[i]
+
+    if (token.type === "paren") { // All that we are concerned about lol
+      switch (token.paren) {
+        case '(':
+          // 1 <-> '('
+          stack.push(++id, 1)
+          token.pID = id
+
+          break
+        case '[':
+          // 2 <-> '['
+          stack.push(++id, 2)
+          token.pID = id
+
+          break
+        case '|': {
+          // An annoying case. If the last item on the stack is NOT |, then we push |. If it IS |, then we check the
+          // previous token. If it is an opening | or operator, we push |. Otherwise, we pop | and continue.
+
+          // The reason behind this is relatively straightforward. | ... | will try to close when it is semantically
+          // valid, but if it is not, it will result in two opening parens. Consider ||x||, for example. The first bar
+          // is clearly an opening bar. The second bar sees that the previous token is a |, and thus determines that it
+          // is also an opening bar. In the case of |3|x||, however, it parses as |3| * x * ||, leading to a syntax
+          // error. In the case of |3 * |x||, it will parse correctly, since the token before | is *. This is the
+          // "close as soon as possible" disambiguation.
+
+          const last = peek()
+
+          // Whether this is an opening |
+          let pushBar = true
+
+          if (last === 3) { // last item is |
+            const prevToken = tokens[i - 1] // prevToken will always exist, since if last === 3 the stack is nonempty
+            const prevTokenType = prevToken.type
+
+            if (!((prevTokenType === "paren" && prevToken.opening) || prevTokenType === "operator")) {
+              pushBar = false
+            }
+          }
+
+          if (pushBar) {
+            // 3 <-> '|'
+            stack.push(++id, 3)
+            token.pID = id
+            token.opening = true
+          } else {
+            stack.pop()
+            token.pID = stack.pop()
+            token.opening = false
+          }
+
+          break
+        }
+        case ')': {
+          const last = stack.pop()
+          const lastId = stack.pop()
+
+          // Check if popped paren is (
+          if (last !== 1)
+            throw errorInString(string, token.index, "Unbalanced parentheses")
+
+          token.pID = lastId
+          break
+        }
+        case ']': {
+          const last = stack.pop()
+          const lastId = stack.pop()
+
+          // Check if popped paren is [
+          if (last !== 2)
+            throw errorInString(string, token.index, "Unbalanced brackets")
+
+          token.pID = lastId
+          break
+        }
+      }
+    }
+  }
+
+  console.log(stack)
+
+  if (stack.length !== 0)
+    throw errorInString(string, string.length, "Unbalanced parentheses/brackets/vertical bars")
+}
+
+function isOpenParen(token) {
+  switch (token.paren) {
+    case '(':
+    case '[':
+      return true
+    case '|':
+      return token.opening
+  }
+
+  return false
+}
+
+function isCloseParen(token) {
+  switch (token.paren) {
+    case ')':
+    case ']':
+      return true
+    case '|':
+      return !token.opening
+  }
+
+  return false
+}
+
+/**
+ * This basically just forwards the result of the simpleTokenizer, but with automatically-inserted * operators as well.
+ * List of options:
+ *  implicitMultiplication: true/false; whether to insert multiplication stuff
+ *
+ * @param string
+ * @param options
+ */
+function expressionTokenizer(string, options={implicitMultiplication: true}) {
+  let tokens = simpleTokenizer(string)
+
+  checkParensBalanced(string, tokens)
+
+  const {
+    implicitMultiplication
+  } = options
+
+  if (implicitMultiplication) {
+    let token1, token2 = tokens[0]
+    const newTokens = []
+
+    for (let i = 1; i < tokens.length; ++i) {
+      token1 = token2
+      token2 = tokens[i]
+
+      // For each pair of tokens, we insert * operators if they match any of the following:
+      // [number/variable] (
+      // ) [number/variable/function]
+      // ) (
+      // [number/variable] [number/variable/function]
+
+      newTokens.push(token1)
+
+      const type1 = token1.type, type2 = token2.type
+      const implicitMult = (type1 === "number" || type1 === "variable" || (type1 === "paren" && isCloseParen(token1)))
+        && ((type2 === "paren" && isOpenParen(token2)) || (type2 === "number" || type2 === "variable" || type2 === "function"))
+
+      if (implicitMult)
+        newTokens.push({ type: "operator", op: '*', index: token2.index - 1, implicit: true })
+    }
+
+    newTokens.push(token2)
+
+    tokens = newTokens
+  }
+
+  return tokens
+}
+
+export {expressionTokenizer}
