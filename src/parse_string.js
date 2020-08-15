@@ -10,5 +10,5 @@ function parseString(string, options={
 }) {
   const tokens = expressionTokenizer(string, options)
 
-  
+
 }
