@@ -532,8 +532,7 @@ function checkParensBalanced(string, tokens) {
 
 function isOpenParen(token) {
   switch (token.paren) {
-    case '(':
-    case '[':
+    case '(': // We return false for [ because we want "arr [3]" to turn into a subscript operator, not arr * [3]
       return true
     case '|':
       return token.opening
