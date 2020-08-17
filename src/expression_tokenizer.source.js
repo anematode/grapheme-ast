@@ -653,4 +653,9 @@ function expressionTokenizer(string, options={implicitMultiplication: true}) {
   return tokens
 }
 
+const tokenEnum = {
+  "comma ": "comma",
+
+}
+
 export {expressionTokenizer}
