@@ -690,7 +690,7 @@ function parseString(string, options = {implicitMultiplication: true}) {
       if (type1 === "function_token") {
         if (type2 !== "node") { // This shouldn't ever happen, but just in case...
           throw errorInString(string, e1.index, "Function declaration without corresponding arguments in parentheses",
-            "Note: Add () after the function declaration to make this a proper function call.")
+            "Note: Add \"()\" after the function declaration to make this a proper function call.")
         }
 
         // New function node
@@ -754,7 +754,7 @@ function parseString(string, options = {implicitMultiplication: true}) {
 
       const expressionDesc = (node === rootNode) ? "expression" : "parenthesized subexpression"
 
-      let errorMsg = issue ? ("Empty " + expressionDesc) : (capitalizeFirstLetter(expressionDesc) + " containing a comma")
+      let errorMsg = issue ? ("Empty " + expressionDesc) : (capitalizeFirstLetter(expressionDesc) + ", containing a comma,")
 
       // Index of the paren node
       let tokI = findTokenIndexByIndex(node.index)
@@ -777,7 +777,7 @@ function parseString(string, options = {implicitMultiplication: true}) {
 
             if (prevprevToken?.type === "variable") { // Yes!
               throw errorInString(string, tokI, errorMsg, "Note: It looks like you intended to evaluate the function " + prevprevToken.name +
-                ", but of the whitespace between the function name and the function's arguments, it was parsed as \"" +
+                ", but because of the whitespace between the function name and the function's arguments, it was parsed as \"" +
                 nodeToString(tokens.slice(tokI - 1 - implicitLikely, tokI + 1)) + "...\" ." +
                 getErrorInStringMessage(string, getEndingIndex(prevprevToken) + 1, "\nNote: Consider removing this whitespace", ""))
             }

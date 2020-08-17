@@ -526,9 +526,7 @@ function checkParensBalanced(string, tokens) {
             const prevToken = tokens[i - 1] // prevToken will always exist, since if last === 3 the stack is nonempty
             const prevTokenType = prevToken.type
 
-            if (!((prevTokenType === "paren" && prevToken.opening) || prevTokenType === "operator")) {
-              pushBar = false
-            }
+            pushBar = ((prevTokenType === "paren" && prevToken.opening && prevToken.paren === '|') || prevTokenType === "operator_token")
           }
 
           if (pushBar) {
