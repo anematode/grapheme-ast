@@ -1,5 +1,5 @@
-import {expressionTokenizer} from "./expression_tokenizer"
-import {errorInString, getErrorInStringMessage, isFunction, ParserError} from "./parser_error"
+import {expressionTokenizer} from "./expression_tokenizer.js"
+import {errorInString, getErrorInStringMessage, isFunction, ParserError} from "./parser_error.js"
 
 /**
  * Apply a function func to all pairs of an array

@@ -3,7 +3,7 @@
  * @param string
  * @param onError {Function}
  */
-import {errorInString, getErrorInStringMessage, isString, ParserError} from "./parser_error"
+import {errorInString, getErrorInStringMessage, isString, ParserError} from "./parser_error.js"
 
 // Whether a string is all ASCII characters
 function isASCII(str) {

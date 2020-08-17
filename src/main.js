@@ -1,3 +1,3 @@
-export * from "./parser_error"
-export * from "./expression_tokenizer"
-export * from "./parse_string"
+export * from "./parser_error.js"
+export * from "./expression_tokenizer.js"
+export * from "./parse_string.js"
