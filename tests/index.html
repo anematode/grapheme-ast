@@ -5,71 +5,103 @@
     <title>Grapheme AST Test</title>
 </head>
 
-<script>
-    // Used to log console.log to the screen. Credit to https://stackoverflow.com/a/50773729/13458117; thanks a lot!
-    rewireLoggingToElement(
-        () => document.getElementById("log"),
-        () => document.getElementById("log-container"), true);
-
-    function rewireLoggingToElement(eleLocator, eleOverflowLocator, autoScroll) {
-        fixLoggingFunc('log');
-        fixLoggingFunc('debug');
-        fixLoggingFunc('warn');
-        fixLoggingFunc('error');
-        fixLoggingFunc('info');
-
-        function fixLoggingFunc(name) {
-            console['old' + name] = console[name];
-            console[name] = function(...arguments) {
-                const output = produceOutput(name, arguments);
-                const eleLog = eleLocator();
-
-                if (autoScroll) {
-                    const eleContainerLog = eleOverflowLocator();
-                    const isScrolledToBottom = eleContainerLog.scrollHeight - eleContainerLog.clientHeight <= eleContainerLog.scrollTop + 1;
-                    eleLog.innerHTML += output + "<br>";
-                    if (isScrolledToBottom) {
-                        eleContainerLog.scrollTop = eleContainerLog.scrollHeight - eleContainerLog.clientHeight;
-                    }
-                } else {
-                    eleLog.innerHTML += output + "<br>";
-                }
-
-                console['old' + name].apply(undefined, arguments);
-            };
-        }
-
-        function produceOutput(name, args) {
-            return args.reduce((output, arg) => {
-                return output +
-                    "<span class=\"log-" + (typeof arg) + " log-" + name + "\">" +
-                    (typeof arg === "object" && (JSON || {}).stringify ? JSON.stringify(arg) : arg) +
-                    "</span>&nbsp;";
-            }, '');
-        }
-    }
-</script>
-
 <style>
-    #log-container { overflow: auto; height: 150px; }
+    * {
+        margin: 0;
+    }
 
-    .log-warn { color: orange }
-    .log-error { color: red }
-    .log-info { color: skyblue }
-    .log-log { color: black }
+    #inp {
+        z-index: 1;
+        position: absolute;
+        left: 0;
+        top: 0;
+    }
 
-    .log-warn, .log-error { font-weight: bold; }
+    #err {
+        z-index: 2;
+        position: absolute;
+        left: 200px;
+        top: 0;
+        color: darkred;
+    }
 </style>
+
+<script type="module">
+  fetch("https://raw.githubusercontent.com/anematode/grapheme/master/build/grapheme.js").then(body => body.text()).then(data => { eval(data); }).then(() => {
+    const plot = new Grapheme.Plot2D()
+
+    document.body.appendChild(plot.domElement)
+
+    const tree = new Grapheme.TreeElement()
+
+    plot.add(tree)
+    plot.setSize(window.innerWidth, window.innerHeight)
+
+    function updateString(str) {
+      let parsed
+
+      document.getElementById("err").innerText = ""
+
+      try {
+        parsed = GraphemeAST.parseString(str)
+      } catch (e) {
+        document.getElementById("err").innerHTML = e.toString()
+        return
+      }
+
+      tree.root = parsed
+      tree.root.applyAll(node => {
+        if (node.children) {
+          for (const c of node.children) {
+            c.parent = node
+          }
+        }
+      })
+      tree.markUpdate()
+
+    }
+
+    function render() {
+      plot.render()
+
+      window.requestAnimationFrame(render)
+    }
+
+    render()
+
+    window.plot = plot
+    window.updateString = updateString
+
+    Object.prototype.applyAll = function (callback, depth = 0) {
+      callback(this, depth)
+
+      if (!this.children)
+        return
+
+      for (const key in this.children) {
+        const v = this.children[key]
+
+        if (typeof v === "object")
+          v.applyAll(callback, depth + 1)
+      }
+    }
+
+    Object.prototype.getTreeText = function () {
+      return GraphemeAST.nodeToString(this)
+    }
+  })
+</script>
 
 <script type="module">
     import * as Grapheme from "../src/main.js"
 
-    window.Grapheme = Grapheme
+    window.GraphemeAST = Grapheme
 </script>
 
 <body>
-<div id="log-container">
-    <pre id="log"></pre>
-</div>
+<textarea id="inp" oninput="updateString(this.value)">
+x^2
+</textarea>
+<textarea id="err" cols="100" rows="10"></textarea>
 </body>
 </html>

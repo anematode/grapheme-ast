@@ -127,10 +127,11 @@ class CyclicalError extends Error {
  * @param func {Function} Signature is (node, parent)
  * @param childrenFirst {boolean} Whether to call func on children first or the upper node first
  * @param rtl {boolean} Whether to call func on children from right to left or left to right
+ * @param onlyNodesWithChildren {boolean} If true, only call func on nodes that have children
  * @param depth {Number}
  * @param checkCycles {boolean}
  */
-function applyToNodesRecursively(topNode, func, childrenFirst = false, rtl = false, depth = Infinity, checkCycles = false) {
+function applyToNodesRecursively(topNode, func, childrenFirst = false, rtl = false, onlyNodesWithChildren = false, depth = Infinity, checkCycles = false) {
   // Check the function is being used properly
   if (typeof topNode !== "object")
     throw new TypeError("Given topNode is not an object.")
@@ -197,7 +198,8 @@ function applyToNodesRecursively(topNode, func, childrenFirst = false, rtl = fal
           if (!child.children || child.children.length === 0) {
             // child doesn't need to be recursed into, so just call the function and continue the loop. The value of
             // childrenFirst doesn't matter here.
-            func(child, currentNode)
+            if (!onlyNodesWithChildren)
+              func(child)
           } else {
             // Check for cycles
             if (checkCycles && nodeStack.some(node => node === child))
@@ -209,7 +211,7 @@ function applyToNodesRecursively(topNode, func, childrenFirst = false, rtl = fal
 
             // If childrenFirst is false, call func
             if (!childrenFirst)
-              func(child, currentNode)
+              func(child)
 
             // Add this child to the list
             nodeStack.push(child)
@@ -221,12 +223,9 @@ function applyToNodesRecursively(topNode, func, childrenFirst = false, rtl = fal
         }
       }
 
-      // If we completed the loop, that means we're done iterating over currentNode
-      const currentParent = peekParent()
-
       // Call func on the current node. Note that this means
       if (childrenFirst)
-        func(currentNode, currentParent)
+        func(currentNode)
 
       // Pop the last values in the stack, starting iteration at the parent
       nodeStack.pop()
@@ -261,6 +260,7 @@ function splitByFunction(arr, func) {
   for (let i = 0; i < arr.length; ++i) {
     const elem = arr[i]
 
+    // If elem satisfies func, split the array there
     if (func(elem)) {
       if (curr.length !== 0)
         result.push(curr)
@@ -285,6 +285,7 @@ function processFunctionArguments(arr) {
   if (!arr || arr.length === 0) // Trivial case
     return []
 
+  // Split the arguments across commas and merge each group into a node
   return splitByFunction(arr, node => node.type === "comma").map(subnode => {
     if (subnode.length === 0)
       throw new ParserError("This should never happen.")
@@ -301,6 +302,12 @@ function processFunctionArguments(arr) {
   })
 }
 
+/**
+ * Surround str with parentheses of a given type
+ * @param paren {String}
+ * @param str {String}
+ * @returns {String}
+ */
 function parenthesizeString(paren, str) {
   switch (paren) {
     case '(':
@@ -316,6 +323,11 @@ function parenthesizeString(paren, str) {
   }
 }
 
+/**
+ * Convert a node to a string. Not as powerful as the corresponding function for AST nodes, but useful for debugging
+ * @param node {Object}
+ * @returns {String}
+ */
 export function nodeToString(node) {
   // Handle arrays
   if (Array.isArray(node))
@@ -360,20 +372,33 @@ export function nodeToString(node) {
   }
 }
 
+/**
+ * For nodes whose starting index is not known, compute it
+ * @param node {Object}
+ * @returns {number}
+ */
 function getStartingIndex(node) {
   return node.index ?? (node.children ? node.children[0].index : NaN)
 }
 
+/**
+ * For nodes whose endIndex is not known, compute its endIndex
+ * @param node {Object}
+ * @returns {number}
+ */
 function getEndingIndex(node) {
   if (node.endIndex !== undefined)
     return node.endIndex
 
+  // If node is an array, convert it to an intermediate form (rarely used)
   if (Array.isArray(node))
-    node = {children: node}
+    node = { children: node }
 
+  // If the node has children, find the last child's ending index
   if (node.children)
     return getEndingIndex(node.children[node.children.length - 1])
 
+  // Cases for various node types, calculating the endIndex based on the node
   switch (node.type) {
     case "comma":
     case "paren":
@@ -398,12 +423,16 @@ function getEndingIndex(node) {
         default:
           throw new Error("Unknown string source " + node.src)
       }
-
     default:
       throw new TypeError("Could not find ending index of node " + JSON.stringify(node))
   }
 }
 
+/**
+ * Check if a node can be used as an operand in a binary, unary or postfix operator
+ * @param node {Object}
+ * @returns {boolean}
+ */
 function checkIfValidOperand(node) {
   switch (node.type) {
     case "comma":
@@ -417,9 +446,26 @@ function checkIfValidOperand(node) {
   }
 }
 
+/**
+ * Take a string and capitalize its first letter
+ * @param string {String}
+ * @returns {string}
+ */
 function capitalizeFirstLetter(string) {
-  return string.charAt(0).toUpperCase() + string.slice(1);
+  return string.charAt(0).toUpperCase() + string.slice(1)
 }
+
+// Operator passes
+const firstOperatorPass = [{"ops": {"postfixes": ["!", "!!"]}, "rtl": false}, {
+  "ops": {
+    "unaries": ["+", "-"],
+    "binaries": ["^"]
+  }, "rtl": true
+}, {"ops": {"binaries": ["*", "/"]}, "rtl": false}, {
+  "ops": {"binaries": ["+", "-"]},
+  "rtl": false
+}, {"ops": {"binaries": ["and", "or"]}, "rtl": false}]
+const secondOperatorPass = [{"ops": {"binaries": ["==", "!=", "<", ">", "<=", ">="]}, "rtl": false}]
 
 /**
  * Convert string into a dict representation of its AST.
@@ -430,9 +476,7 @@ function capitalizeFirstLetter(string) {
  * @param string
  * @param options
  */
-function parseString(string, options = {
-  implicitMultiplication: true,
-}) {
+function parseString(string, options = {implicitMultiplication: true}) {
   // The parsing steps are as follows:
   // 0. Tokenize (this includes checking for balanced parens)
   // 1. Check token validity
@@ -453,6 +497,8 @@ function parseString(string, options = {
   //   e. and and or, in the same pass, from left to right
   //   f. Chained comparison operators -> cchain
   //   g. Comparison operators (==, !=, <, >, <=, >=), in the same pass, from left to right
+  // 8. Check for unprocessed tokens
+  // 9. Add index / endIndex information to all nodes
 
   // Step 0
   const tokens = expressionTokenizer(string, options)
@@ -615,7 +661,7 @@ function parseString(string, options = {
         }
       }
     }
-  })
+  }, false, false, true)
 
   // Step 5: Process functions.
   // a. We look for token pairs of the form  <function_token> <node> and replace the pair with a single node of the form
@@ -665,7 +711,7 @@ function parseString(string, options = {
     }, true)
 
     node.children = newChildren
-  }, true)
+  }, true, false, true)
 
   // 5b. Process function arguments by taking the tokens in each function's children list and splitting them by the
   // comma token into separate nodes.
@@ -682,7 +728,7 @@ function parseString(string, options = {
         child.children = processFunctionArguments(child.children)
       }
     }
-  })
+  }, false, false, true)
 
   // 5c: Parenthesized expressions cannot be empty or contain commas
   applyToNodesRecursively(rootNode, node => {
@@ -744,7 +790,7 @@ function parseString(string, options = {
       throw errorInString(string, tokI, errorMsg, issue ? "Note: Perhaps put an expression inside?" :
         "Note: Perhaps remove the comma? Grapheme does not have the concept of a comma operator; commas are only valid in function calls.")
     }
-  })
+  }, false, false, true)
 
   // Step 6: Process property accesses from right to left.
   // Property accesses are abstracted as {type: "operator", op: ".", children: [ obj, string: prop ]}.
@@ -792,7 +838,7 @@ function parseString(string, options = {
     }
 
     node.children = newChildren
-  })
+  }, false, false, true)
 
   function checkOperandValid(operator, other, type) {
     if (!checkIfValidOperand(other)) {
@@ -801,89 +847,134 @@ function parseString(string, options = {
     }
   }
 
-  /**
-   * Helper function to recursively process operators
-   * @param ops {Object}
-   * @param ops.unaries {Array} List of unary operators to process in this pass
-   * @param ops.postfixes {Array} List of postfix operators to process in this pass
-   * @param ops.binaries {Array} List of binary operators to process in this pass
-   * @param rtl {boolean} Whether to process the operators from left to right or right to left (default LTR of course)
-   */
-  function processOperators(ops, rtl = false) {
-    const unaries = ops.unaries ?? []
-    const postfixes = ops.postfixes ?? []
-    const binaries = ops.binaries ?? []
+  // Array storing a list of passes for doit() to run. Each element is of the form { ops: { binaries: [...], unaries:
+  // [...], postfixes: [...] }, rtl: (boolean) }.
+  let operatorPasses
 
+  function doIt() {
     applyToNodesRecursively(rootNode, node => {
       const children = node.children
 
       if (!children || !children.some(child => child.type === "operator_token")) // no operators here, continue
         return
 
-      // Note 1 to self: if there is ever a unary operator evaluated LTR or a postfix operator evaluated RTL, the code
-      // will have to modified slightly to correspond with the index changes. As it is, coincidentally, only binary ops
-      // need the index i to be adjusted in replaceWith.
-      // Note 2 to self: This is inefficient for large inputs because .splice is O(n). Ideally this should be
-      // reimplemented in another way.
-      triplewise(children, (e1, e2, e3, index, replaceWith) => {
-        if (e2.type === "operator_token") { // What we are actually concerned about
-          if (binaries.includes(e2.op)) {
-            // Verify that this is indeed a binary operator. This is true if both sides satisfy checkIfValidOperand
-            checkOperandValid(e2, e1, "binary")
-            checkOperandValid(e2, e3, "binary")
+      for (const opPass of operatorPasses) {
+        const {ops, rtl} = opPass
+        const {unaries = [], binaries = [], postfixes = []} = ops
 
-            e2.type = "operator"
-            e2.children = [e1, e3]
-
-            replaceWith([e2])
-          } else if (unaries.includes(e2.op)) {
-            // Verify that this is indeed a unary operator. This is true if e1 is falsy or an operator.
-
-            if (!e1 || e1.type === "operator_token" || e1.type === "operator") {
-              checkOperandValid(e2, e3, "unary")
+        // Note 1 to self: if there is ever a unary operator evaluated LTR or a postfix operator evaluated RTL, the code
+        // will have to modified slightly to correspond with the index changes. As it is, coincidentally, only binary ops
+        // need the index i to be adjusted in replaceWith.
+        // Note 2 to self: This is inefficient for large inputs because .splice is O(n). Ideally this should be
+        // reimplemented in another way.
+        triplewise(children, (e1, e2, e3, index, replaceWith) => {
+          if (e2.type === "operator_token") { // What we are actually concerned about
+            if (binaries.includes(e2.op)) {
+              // Verify that this is indeed a binary operator. This is true if both sides satisfy checkIfValidOperand
+              checkOperandValid(e2, e1, "binary")
+              checkOperandValid(e2, e3, "binary")
 
               e2.type = "operator"
-              e2.children = [e3]
+              e2.children = [e1, e3]
 
-              replaceWith(e1 ? [e1, e2] : [e2])
-            }
-          } else if (postfixes.includes(e2.op)) {
-            // Verify that this is indeed a postfix operator. This is true if e3 is falsy or an operator.
+              replaceWith([e2])
+            } else if (unaries.includes(e2.op)) {
+              // Verify that this is indeed a unary operator. This is true if e1 is falsy or an operator.
 
-            if (!e3 || e3.type === "operator_token" || e3.type === "operator") {
-              checkOperandValid(e2, e1, "postfix")
+              if (!e1 || e1.type === "operator_token" || e1.type === "operator") {
+                checkOperandValid(e2, e3, "unary")
 
-              e2.type = "operator"
-              e2.children = [e1]
+                e2.type = "operator"
+                e2.children = [e3]
 
-              replaceWith(e3 ? [e2, e3] : [e2])
+                replaceWith([e1, e2])
+              }
+            } else if (postfixes.includes(e2.op)) {
+              // Verify that this is indeed a postfix operator. This is true if e3 is falsy or an operator.
+
+              if (!e3 || e3.type === "operator_token" || e3.type === "operator") {
+                checkOperandValid(e2, e1, "postfix")
+
+                e2.type = "operator"
+                e2.children = [e1]
+
+                replaceWith(e3 ? [e2, e3] : [e2])
+              }
             }
           }
-        }
-      }, true, rtl)
-
+        }, true, rtl)
+      }
     }, true)
   }
 
   // Step 7: Process operators recursively.
-  // 7a. Double factorials and factorials, in the same pass, from left to right
-  processOperators({postfixes: ['!', "!!"]})
-  // 7b. Exponentiation and unary minus/plus, in the same pass, from right to left
-  processOperators({unaries: ['+', '-'], binaries: ['^']}, true)
-  // 7c. Multiplication and division, in the same pass, from left to right
-  processOperators({binaries: ['*', '/']})
-  // 7d. Addition and subtraction, in the same pass, from left to right
-  processOperators({binaries: ['+', '-']})
-  // 7e. and and or, in the same pass, from left to right
-  processOperators({binaries: ['and', 'or']})
-
+  // 7a-e. Process non-boolean operators
+  operatorPasses = firstOperatorPass
+  doIt()
 
   // 7f. Chained comparison operators -> cchain
+  // To find cchain nodes, we search through the nodes and greedily look for node patterns like
+  // [non op] boolean op [non op] boolean op [non op] ... . Once the largest such pattern has been matched,
+  // we collapse it to a single cchain node. cchain has the following signature:
+  // { type: "operator", index, endIndex, children: [ e1, string, e2, ... ], implicit: false }
+  // Because there are no other operators at this stage, the entirety of the node must be a cchain for it to be valid.
+  // Thus, we can quickly eliminate most nodes from consideration by checking if their length is >= 5 and is odd.
+  applyToNodesRecursively(rootNode, node => {
+    const children = node.children
+
+    // This means the node can't be a cchain
+    if (!children || children.length < 5 || children.length % 2 === 0)
+      return
+
+    for (let i = 0; i < children.length; ++i) {
+      const child = children[i]
+      const parity = i % 2 === 0  // if true, it should be a non-operator. if false, it should be a boolean operator
+
+      const isOperator = child.type === "operator_token" || child.type === "operator"
+
+      if (parity === isOperator)
+        return
+    }
+
+    // If we got here, this is a cchain!
+
+    // Convert the node to a cchain
+    node.type = "operator"
+    node.op = "cchain"
+    delete node.parenType
+    node.implicit = false
+
+    // Convert the boolean ops to strings
+    for (let i = 1; i < children.length; i += 2) {
+      const opNode = children[i]
+
+      children[i] = {
+        type: "string",
+        contents: opNode.op,
+        index: opNode.index,
+        endIndex: opNode.index + opNode.op.length - 1,
+        src: "operator"
+      }
+    }
+  }, false, false, true)
 
   // 7g. Comparison operators (==, !=, <, >, <=, >=), in the same pass, from left to right
-  processOperators({binaries: ['==', '!=', '<', '>', "<=", ">="]})
+  operatorPasses = secondOperatorPass
+  doIt()
 
-  // Step n: Provide index and endIndex information for all nodes
+  // 8. Make sure there are no residual tokens
+  applyToNodesRecursively(rootNode, node => {
+    switch (node.type) {
+      case "comma":
+      case "paren":
+      case "function_token":
+      case "operator_token":
+      case "property_access":
+        throw errorInString(string, node.index, "Unprocessed token", "This error should never happen; please contact timothy.herchen@gmail.com or open up an issue on GitHub with the stack trace.")
+    }
+  }, false, false, false)
+
+  // Step 9: Provide index and endIndex information for all nodes
   applyToNodesRecursively(rootNode, node => {
     if (node.index === undefined) {
       node.index = getStartingIndex(node)
@@ -894,7 +985,5 @@ function parseString(string, options = {
 
   return rootNode
 }
-
-//const dat = {name: "a", children: [ {name: "b", children: [1,2,3]}, {name: "c", children: [4,5,6]}, {name: "d"} ] }
 
 export {applyToNodesRecursively, parseString}
