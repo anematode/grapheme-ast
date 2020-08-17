@@ -13,10 +13,11 @@ const MAX_LENGTH = 75
  * @param index
  * @param lineIndex
  * @param message
+ * @param suggestedFix
  * @param includeIndexInfo
  * @returns {string}
  */
-function generateErrorMessage(line, index, lineIndex, message, includeIndexInfo) {
+function generateErrorMessage(line, index, lineIndex, message, suggestedFix, includeIndexInfo) {
   // The excerpt of the whole line shown, and the number of spaces needed to correctly position the caret
   let excerpt, newIndex
 
@@ -49,11 +50,14 @@ function generateErrorMessage(line, index, lineIndex, message, includeIndexInfo)
     newIndex = index
   }
 
+  const indexInfo = " at" + ((lineIndex !== -1 ? " line " + (lineIndex + 1) + ',' : '') + " index " + index)
+
   // Synthesize the text of the error message, potentially with index and line information
-  const errorMessage = message + (includeIndexInfo ? (", index " + index + (lineIndex !== -1 ? ", line " + (lineIndex + 1) : '')) : '')
+  const errorMessage = message + (includeIndexInfo ? indexInfo : '') + ':'
+
   const spaces = " ".repeat(newIndex)
 
-  return errorMessage + '\n' + excerpt + '\n' + spaces + "^"
+  return errorMessage + '\n' + excerpt + '\n' + spaces + "^" + (suggestedFix ? "\n" : "") + suggestedFix
 }
 
 /**
@@ -62,10 +66,11 @@ function generateErrorMessage(line, index, lineIndex, message, includeIndexInfo)
  * @param string {String}
  * @param index {number}
  * @param message {String}
+ * @param suggestedFix {String} Optional string coming after the error message, suggesting how to fix the error.
  * @param includeIndexInfo {boolean}
  * @returns {string}
  */
-function getErrorInStringMessage(string, index, message="Unknown error", includeIndexInfo=true) {
+function getErrorInStringMessage(string, index, message="Unknown error", suggestedFix="", includeIndexInfo=true) {
   // Clamp index to a valid range. Note that index=string.length will result in the error being shown immediately after
   // the end of the string. This would be used for example in an unbalanced parenthesis error
   if (index < 0)
@@ -113,7 +118,7 @@ function getErrorInStringMessage(string, index, message="Unknown error", include
   if (lines.length === 1)
     lineIndex = -1
 
-  return generateErrorMessage(line, indexInLine, lineIndex, message, includeIndexInfo)
+  return generateErrorMessage(line, indexInLine, lineIndex, message, suggestedFix, includeIndexInfo)
 }
 
 /**
@@ -124,4 +129,4 @@ function errorInString(...args) {
   return new ParserError(getErrorInStringMessage(...args))
 }
 
-export { ParserError, errorInString }
+export { ParserError, errorInString, getErrorInStringMessage }

@@ -3,7 +3,7 @@
  * @param string
  * @param onError {Function}
  */
-import {errorInString} from "./parser_error"
+import {errorInString, getErrorInStringMessage, ParserError} from "./parser_error"
 
 // Whether a string is all ASCII characters
 function isASCII(str) {
@@ -363,7 +363,7 @@ function simpleTokenizer(string) {
 
       // If a function was found...
       if (functionToken !== -1) {
-        tokens.push({ type: "function", name: string.slice(currentIndex, functionToken - 1), index: currentIndex })
+        tokens.push({ type: "function_token", name: string.slice(currentIndex, functionToken - 1), index: currentIndex })
         // push a (, since that is included in function
         tokens.push({ type: "paren", paren: '(', index: functionToken - 1, pID: -1 })
 
@@ -411,7 +411,7 @@ function simpleTokenizer(string) {
 
     if (tokenIndex !== -1) {
       const op = getToken()
-      tokens.push({ type: "operator", op: simpleOperators[op], index: currentIndex, implicit: false })
+      tokens.push({ type: "operator_token", op: simpleOperators[op], index: currentIndex, implicit: false })
       advanceCurrentIndex()
 
       continue
@@ -421,6 +421,30 @@ function simpleTokenizer(string) {
   }
 
   return tokens
+}
+
+function parenToDescriptor(token, plural=false) {
+  switch (token.paren) {
+    case '(':
+    case ')':
+      return plural ? "parentheses" : "parenthesis"
+    case '[':
+    case ']':
+      return plural ? "brackets" : "bracket"
+    case '|':
+      return plural ? "vertical bars" : "vertical bar"
+    default:
+      return ""
+  }
+}
+
+function parenToCompleteDescriptor(token, plural=false) {
+  if (!token.hasOwnProperty("opening"))
+    return ""
+
+  const descriptor = parenToDescriptor(token, plural)
+
+  return (token.opening ? "opening" : "closing") + ' ' + descriptor
 }
 
 /**
@@ -439,6 +463,21 @@ function checkParensBalanced(string, tokens) {
     return stack[stack.length - 1]
   }
 
+  function findParenWithId(id) {
+    return tokens.find(token => token.pID === id)
+  }
+
+  // Fancy unbalanced parentheses error, including information about the corresponding parenthesis that led to the error
+  function unbalancedParenError(token, prevId) {
+    const prevParen = findParenWithId(prevId)
+
+    const helpMessage = prevParen ? getErrorInStringMessage(string, prevParen.index, "Note: Corresponds to a " +
+      parenToCompleteDescriptor(prevParen), "Perhaps change this to an opening " +
+      parenToDescriptor(token) + '?') : ""
+
+    return errorInString(string, token.index, "Unbalanced " + parenToDescriptor(token, true), helpMessage)
+  }
+
   let id = 0 // id for paren pairs
 
   // Vertical bars are a bit hard to handle correctly. We assume that, if a bar is encountered and it can be correctly
@@ -451,13 +490,17 @@ function checkParensBalanced(string, tokens) {
         case '(':
           // 1 <-> '('
           stack.push(++id, 1)
+
           token.pID = id
+          token.opening = true
 
           break
         case '[':
           // 2 <-> '['
           stack.push(++id, 2)
+
           token.pID = id
+          token.opening = true
 
           break
         case '|': {
@@ -504,9 +547,10 @@ function checkParensBalanced(string, tokens) {
 
           // Check if popped paren is (
           if (last !== 1)
-            throw errorInString(string, token.index, "Unbalanced parentheses")
+            throw unbalancedParenError(token, lastId)
 
           token.pID = lastId
+          token.opening = false
           break
         }
         case ']': {
@@ -515,19 +559,26 @@ function checkParensBalanced(string, tokens) {
 
           // Check if popped paren is [
           if (last !== 2)
-            throw errorInString(string, token.index, "Unbalanced brackets")
+            throw unbalancedParenError(token, lastId)
 
           token.pID = lastId
+          token.opening = false
           break
         }
       }
     }
   }
 
-  console.log(stack)
+  if (stack.length !== 0) {
+    // Get the id of the last unclosed paren
+    const unclosedTokenId = (stack.pop(), stack.pop())
+    const unclosedToken = findParenWithId(unclosedTokenId)
 
-  if (stack.length !== 0)
-    throw errorInString(string, string.length, "Unbalanced parentheses/brackets/vertical bars")
+    const helpMessage = getErrorInStringMessage(string, unclosedToken.index, "Note: Unclosed " +
+      parenToCompleteDescriptor(unclosedToken))
+
+    throw errorInString(string, string.length, "Unbalanced parentheses/brackets/vertical bars", helpMessage)
+  }
 }
 
 function isOpenParen(token) {
@@ -588,10 +639,10 @@ function expressionTokenizer(string, options={implicitMultiplication: true}) {
 
       const type1 = token1.type, type2 = token2.type
       const implicitMult = (type1 === "number" || type1 === "variable" || (type1 === "paren" && isCloseParen(token1)))
-        && ((type2 === "paren" && isOpenParen(token2)) || (type2 === "number" || type2 === "variable" || type2 === "function"))
+        && ((type2 === "paren" && isOpenParen(token2)) || (type2 === "number" || type2 === "variable" || type2 === "function_token"))
 
       if (implicitMult)
-        newTokens.push({ type: "operator", op: '*', index: token2.index - 1, implicit: true })
+        newTokens.push({ type: "operator_token", op: '*', index: token2.index - 1, implicit: true })
     }
 
     newTokens.push(token2)
