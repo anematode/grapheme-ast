@@ -507,8 +507,8 @@ function parseString(string, options = {implicitMultiplication: true}) {
   if (tokens.length === 0)
     return null
 
-  function findTokenIndex(tok) {
-    return tok ? tokens.indexOf(tok) : -1
+  function findTokenIndexByIndex(index) {
+    return tokens.findIndex(tok => tok.index === index)
   }
 
   // Step 1
@@ -740,7 +740,7 @@ function parseString(string, options = {implicitMultiplication: true}) {
       const subchildren = node.children
 
       let issue = 0    // enum: 1 means empty parenthesized subexpression, 0 means subexpression with comma
-      let offendingCommaOperator = -1
+      let offendingCommaOperator
 
       if (subchildren.length === 0) {
         issue = 1
@@ -755,7 +755,9 @@ function parseString(string, options = {implicitMultiplication: true}) {
       const expressionDesc = (node === rootNode) ? "expression" : "parenthesized subexpression"
 
       let errorMsg = issue ? ("Empty " + expressionDesc) : (capitalizeFirstLetter(expressionDesc) + " containing a comma")
-      let tokI = findTokenIndex(node.parenInfo?.startIndex)
+
+      // Index of the paren node
+      let tokI = findTokenIndexByIndex(node.index)
 
       if (tokI > 0) { // means the token was found and is not the first token in the string
         const prevToken = tokens[tokI - 1]
@@ -775,8 +777,8 @@ function parseString(string, options = {implicitMultiplication: true}) {
 
             if (prevprevToken?.type === "variable") { // Yes!
               throw errorInString(string, tokI, errorMsg, "Note: It looks like you intended to evaluate the function " + prevprevToken.name +
-                ", but because there was whitespace between the function name and the function's arguments, it was parsed as " +
-                nodeToString(children.slice(i - 1 - implicitLikely, i + 1)) + "." +
+                ", but of the whitespace between the function name and the function's arguments, it was parsed as \"" +
+                nodeToString(tokens.slice(tokI - 1 - implicitLikely, tokI + 1)) + "...\" ." +
                 getErrorInStringMessage(string, getEndingIndex(prevprevToken) + 1, "\nNote: Consider removing this whitespace", ""))
             }
 
@@ -794,7 +796,7 @@ function parseString(string, options = {implicitMultiplication: true}) {
       throw errorInString(string, tokI, errorMsg, issue ? "Note: Perhaps put an expression inside?" :
         "Note: Perhaps remove the comma? Grapheme does not have the concept of a comma operator; commas are only valid in function calls.")
     }
-  }, false, false, true)
+  }, false, false, false)
 
   // Step 6: Process property accesses from right to left.
   // Property accesses are abstracted as {type: "operator", op: ".", children: [ obj, string: prop ]}.
