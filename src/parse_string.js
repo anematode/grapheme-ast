@@ -503,6 +503,10 @@ function parseString(string, options = {implicitMultiplication: true}) {
   // Step 0
   const tokens = expressionTokenizer(string, options)
 
+  // If there are no tokens, return null
+  if (tokens.length === 0)
+    return null
+
   function findTokenIndex(tok) {
     return tok ? tokens.indexOf(tok) : -1
   }
