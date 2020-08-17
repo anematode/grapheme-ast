@@ -1,5 +1,5 @@
 import {expressionTokenizer} from "./expression_tokenizer"
-import {errorInString, getErrorInStringMessage, ParserError} from "./parser_error"
+import {errorInString, getErrorInStringMessage, isFunction, ParserError} from "./parser_error"
 
 /**
  * Apply a function func to all pairs of an array
@@ -7,7 +7,7 @@ import {errorInString, getErrorInStringMessage, ParserError} from "./parser_erro
  * @param func {Function} Signature is (elem1, elem2, elem1index, skipNextPair)
  * @param includeEnds {boolean} Whether to call func with the additional calls (undefined, first), (last, undefined)
  */
-function pairwise(arr, func, includeEnds=true) {
+function pairwise(arr, func, includeEnds = true) {
   const top = arr.length - 1 + includeEnds
   let i = -includeEnds
 
@@ -28,7 +28,7 @@ function pairwise(arr, func, includeEnds=true) {
  * @param includeEnds {boolean} Whether to call func with the additional calls (undefined, first, second), (penultimate, last, undefined)
  * @param rtl {boolean} Whether to make the calls from left to right or right to left
  */
-function triplewise(arr, func, includeEnds=true, rtl=true) {
+function triplewise(arr, func, includeEnds = true, rtl = true) {
   let lower = includeEnds ? 0 : 1
   let upper = arr.length - lower - 1
   let i = rtl ? upper : lower
@@ -44,7 +44,7 @@ function triplewise(arr, func, includeEnds=true, rtl=true) {
     else if (i === arr.length - 1)
       arr.splice(arr.length - 2, 3, ...subarr.slice(0, 2))
     else
-      arr.splice(i-1, 3, ...subarr)
+      arr.splice(i - 1, 3, ...subarr)
 
     if (subarr.length === 1) // If this is the case we need to change i
       --i
@@ -52,11 +52,12 @@ function triplewise(arr, func, includeEnds=true, rtl=true) {
 
   // i is the index of the middle element
   for (; rtl ? (i >= lower) : (i <= arr.length - lower - 1); skipNextTriple()) {
-    func(arr[i-1], arr[i], arr[i+1], i, replaceWith)
+    func(arr[i - 1], arr[i], arr[i + 1], i, replaceWith)
   }
 }
 
-class CyclicalError extends Error {}
+class CyclicalError extends Error {
+}
 
 /**
  * The nodes/tokens are specified below. Common to all nodes/tokens are the properties type, which denotes the type of
@@ -126,11 +127,13 @@ class CyclicalError extends Error {}
  * @param depth {Number}
  * @param checkCycles {boolean}
  */
-function applyToNodesRecursively(topNode, func, childrenFirst=false, rtl=false, depth=Infinity, checkCycles=false) {
+function applyToNodesRecursively(topNode, func, childrenFirst = false, rtl = false, depth = Infinity, checkCycles = false) {
   // Check the function is being used properly
+
+  // Reenable if I can figure out more robust macros
   if (typeof topNode !== "object")
     throw new TypeError("Given topNode is not an object.")
-  if (typeof func !== "function")
+  if (!isFunction(func))
     throw new TypeError("Given callback fn is not a function.")
   if (depth <= 0 || (!Number.isInteger(depth) && depth !== Infinity))
     throw new RangeError("depth parameter must be a positive integer or Infinity.")
@@ -177,57 +180,57 @@ function applyToNodesRecursively(topNode, func, childrenFirst=false, rtl=false, 
 
   // The main loop of the iteration. We break out of it once the stack is empty. The first time in a while I've used a
   // label. Send your "bad practice" complaints to /dev/null or certainlynotasheep@gmail.com.
-  mainLoop:
-  // noinspection JSAssignmentUsedAsCondition (To appease Monseigneur Harvey Webstorm)
-  while (currentNode = peek()) { // While there is a node whose children we must iterate over...
-    // Get the index to start iterating at
-    const currentIndex = peekIndex()
+  main:
+    // noinspection JSAssignmentUsedAsCondition (To appease Monseigneur Harvey Webstorm)
+    while (currentNode = peek()) { // While there is a node whose children we must iterate over...
+      // Get the index to start iterating at
+      const currentIndex = peekIndex()
 
-    const currentChildren = currentNode.children
+      const currentChildren = currentNode.children
 
-    if (nodeStack.length < depth) { // Enter the inner loop if we haven't gone that deep
-      // Iterate over the children
-      for (let i = currentIndex; rtl ? (i >= 0) : (i < currentChildren.length); rtl ? (--i) : (++i)) {
-        const child = currentChildren[i]
+      if (nodeStack.length < depth) { // Enter the inner loop if we haven't gone that deep
+        // Iterate over the children
+        for (let i = currentIndex; rtl ? (i >= 0) : (i < currentChildren.length); rtl ? (--i) : (++i)) {
+          const child = currentChildren[i]
 
-        if (!child.children || child.children.length === 0) {
-          // child doesn't need to be recursed into, so just call the function and continue the loop. The value of
-          // childrenFirst doesn't matter here.
-          func(child, currentNode)
-        } else {
-          // Check for cycles
-          if (checkCycles && nodeStack.some(node => node === child))
-            throw new CyclicalError("Object contains a cycle!")
-
-          // child needs to be traversed because it has at least one child.
-          // Update the index of currentNode in the stack.
-          setIndex(i + (rtl ? -1 : 1))
-
-          // If childrenFirst is false, call func
-          if (!childrenFirst)
+          if (!child.children || child.children.length === 0) {
+            // child doesn't need to be recursed into, so just call the function and continue the loop. The value of
+            // childrenFirst doesn't matter here.
             func(child, currentNode)
+          } else {
+            // Check for cycles
+            if (checkCycles && nodeStack.some(node => node === child))
+              throw new CyclicalError("Object contains a cycle!")
 
-          // Add this child to the list
-          nodeStack.push(child)
-          nodeChildIndexStack.push(rtl ? child.children.length - 1 : 0)
+            // child needs to be traversed because it has at least one child.
+            // Update the index of currentNode in the stack.
+            setIndex(i + (rtl ? -1 : 1))
 
-          // Continue the main loop with the new child
-          continue mainLoop
+            // If childrenFirst is false, call func
+            if (!childrenFirst)
+              func(child, currentNode)
+
+            // Add this child to the list
+            nodeStack.push(child)
+            nodeChildIndexStack.push(rtl ? child.children.length - 1 : 0)
+
+            // Continue the main loop with the new child
+            continue main
+          }
         }
       }
-    }
 
-    // If we completed the loop, that means we're done iterating over currentNode
-    const currentParent = peekParent()
+      // If we completed the loop, that means we're done iterating over currentNode
+      const currentParent = peekParent()
 
-    // Call func on the current node. Note that this means
-    if (childrenFirst)
-      func(currentNode, currentParent)
+      // Call func on the current node. Note that this means
+      if (childrenFirst)
+        func(currentNode, currentParent)
 
-    // Pop the last values in the stack, starting iteration at the parent
-    nodeStack.pop()
-    nodeChildIndexStack.pop()
-  } // mainLoop
+      // Pop the last values in the stack, starting iteration at the parent
+      nodeStack.pop()
+      nodeChildIndexStack.pop()
+    } // mainLoop
 }
 
 // Check whether an operator (as a string) could be a prefix operator
@@ -315,7 +318,7 @@ function parenthesizeString(paren, str) {
 export function nodeToString(node) {
   // Handle arrays
   if (Array.isArray(node))
-    node = { children: node, type: "node" }
+    node = {children: node, type: "node"}
 
   switch (node.type) {
     case "comma":
@@ -335,7 +338,7 @@ export function nodeToString(node) {
           if (couldBePostfixOp(node.op)) {
             return nodeToString(node.children) + node.op
           } else {
-            return node.op + node.toString(node.children)
+            return node.op + nodeToString(node.children)
           }
         case 2:
           return nodeToString(node.children[0]) + node.op + nodeToString(node.children[1])
@@ -362,7 +365,7 @@ function getEndingIndex(node) {
     return node.endIndex
 
   if (Array.isArray(node))
-    node = { children: node }
+    node = {children: node}
 
   if (node.children)
     return getEndingIndex(node.children[node.children.length - 1])
@@ -409,7 +412,7 @@ function checkIfValidOperand(node) {
  * @param string
  * @param options
  */
-function parseString(string, options={
+function parseString(string, options = {
   implicitMultiplication: true,
 }) {
   // The parsing steps are as follows:
@@ -564,7 +567,7 @@ function parseString(string, options={
   }
 
   // The root node, aka what we will henceforth operate on
-  const rootNode = { type: "node", children: newTokens, parenType: "", index: newTokens[0].index }
+  const rootNode = {type: "node", children: newTokens, parenType: "", index: newTokens[0].index}
 
   // Step 4: Convert | ... | into abs( ... ). This will mean a node of the form {type: "function", name: "abs",
   // parenInfo: {startIndex, endIndex, verticalBar: true}, index: (index of first bar), children: []}. Note that an abs function
@@ -603,7 +606,7 @@ function parseString(string, options={
   applyToNodesRecursively(rootNode, node => {
     const children = node.children
     if (!children || !children.some(child => child.type === "function_token"))
-      // If the children contains no function, we can just chug along
+    // If the children contains no function, we can just chug along
       return
 
     const newChildren = [] // array to replace node.children with
@@ -667,65 +670,56 @@ function parseString(string, options={
 
   // 5c: Parenthesized expressions cannot be empty or contain commas
   applyToNodesRecursively(rootNode, node => {
-    const children = node.children
+    if (node.type === "node") {
+      const subchildren = node.children
 
-    if (!children)
-      return
+      let issue = 0    // enum: 1 means empty parenthesized subexpression, 0 means subexpression with comma
+      let offendingCommaOperator = -1
 
-    for (let i = 0; i < children.length; ++i) {
-      const child = children[i]
+      if (subchildren.length === 0) {
+        issue = 1
+      } else {
+        offendingCommaOperator = subchildren.find(child => child.type === "comma")
 
-      if (child.type === "node") {
-        const subchildren = child.children
-
-        let issue = 0    // enum: 1 means empty parenthesized subexpression, 0 means subexpression with comma
-        let offendingCommaOperator = -1
-
-        if (subchildren.length === 0) {
-          issue = 1
-        } else {
-          offendingCommaOperator = subchildren.find(child => child.type === "comma")
-
-          if (!offendingCommaOperator)
-            continue
-        }
-        // If we get here in execution, this is an error
-
-        const errorMsg = issue ? emptyParensMessage : "Parenthesized subexpression containing a comma"
-        const tokI = findTokenIndex(child.parenInfo?.startIndex)
-
-        if (tokI > 0) { // means the token was found and is not the first token in the string
-          const prevToken = tokens[tokI - 1]
-
-          // ppTokenI is the index of the likely culprit token. If implicit multiplication is turned on, it will be tokI - 2
-          let ppTokenI = tokI - 1
-          let implicitLikely = false
-
-          switch (prevToken.type) {
-            case "operator_token":
-              if (prevToken.implicit) { // aha, implicit multiplication
-                ppTokenI = tokI - 2
-                implicitLikely = true
-              }
-            case "variable": // aha, implicit multiplication is probably turned off and they intended a function call
-              const prevprevToken = tokens[ppTokenI]
-
-              if (prevprevToken?.type === "variable") { // Yes!
-                throw errorInString(string, tokI, errorMsg, "Note: It looks like you intended to evaluate the function " + prevprevToken.name +
-                  ", but because there was whitespace between the function name and the function's arguments, it was parsed as " +
-                  nodeToString(children.slice(i - 1 - implicitLikely, i + 1)) + "." +
-                  getErrorInStringMessage(string, getEndingIndex(prevprevToken) + 1, "\nNote: Consider removing this whitespace", ""))
-              }
-
-              break
-            default:
-              break
-          }
-        }
-
-        throw errorInString(string, tokI, errorMsg, issue ? "Note: Perhaps put an expression inside?" :
-          "Note: Perhaps remove the comma? Grapheme does not have the concept of a comma operator; commas are only valid in function calls.")
+        if (!offendingCommaOperator)
+          return
       }
+      // If we get here in execution, this is an error
+
+      const errorMsg = issue ? emptyParensMessage : "Parenthesized subexpression containing a comma"
+      const tokI = findTokenIndex(node.parenInfo?.startIndex)
+
+      if (tokI > 0) { // means the token was found and is not the first token in the string
+        const prevToken = tokens[tokI - 1]
+
+        // ppTokenI is the index of the likely culprit token. If implicit multiplication is turned on, it will be tokI - 2
+        let ppTokenI = tokI - 1
+        let implicitLikely = false
+
+        switch (prevToken.type) {
+          case "operator_token":
+            if (prevToken.implicit) { // aha, implicit multiplication
+              ppTokenI = tokI - 2
+              implicitLikely = true
+            }
+          case "variable": // aha, implicit multiplication is probably turned off and they intended a function call
+            const prevprevToken = tokens[ppTokenI]
+
+            if (prevprevToken?.type === "variable") { // Yes!
+              throw errorInString(string, tokI, errorMsg, "Note: It looks like you intended to evaluate the function " + prevprevToken.name +
+                ", but because there was whitespace between the function name and the function's arguments, it was parsed as " +
+                nodeToString(children.slice(i - 1 - implicitLikely, i + 1)) + "." +
+                getErrorInStringMessage(string, getEndingIndex(prevprevToken) + 1, "\nNote: Consider removing this whitespace", ""))
+            }
+
+            break
+          default:
+            break
+        }
+      }
+
+      throw errorInString(string, tokI, errorMsg, issue ? "Note: Perhaps put an expression inside?" :
+        "Note: Perhaps remove the comma? Grapheme does not have the concept of a comma operator; commas are only valid in function calls.")
     }
   })
 
@@ -790,7 +784,7 @@ function parseString(string, options={
    * @param ops.binaries {Array} List of binary operators to process in this pass
    * @param rtl {boolean} Whether to process the operators from left to right or right to left (default LTR of course)
    */
-  function processOperators(ops, rtl=false) {
+  function processOperators(ops, rtl = false) {
     const unaries = ops.unaries ?? []
     const postfixes = ops.postfixes ?? []
     const binaries = ops.binaries ?? []
@@ -848,19 +842,19 @@ function parseString(string, options={
 
   // Step 7: Process operators recursively.
   // 7a. Double factorials and factorials, in the same pass, from left to right
-  processOperators({ postfixes: ['!', "!!"] })
+  processOperators({postfixes: ['!', "!!"]})
   // 7b. Exponentiation and unary minus/plus, in the same pass, from right to left
-  processOperators({ unaries: ['+', '-'], binaries: ['^'] }, true)
+  processOperators({unaries: ['+', '-'], binaries: ['^']}, true)
   // 7c. Multiplication and division, in the same pass, from left to right
-  processOperators({ binaries: ['*', '/'] })
+  processOperators({binaries: ['*', '/']})
   // 7d. Addition and subtraction, in the same pass, from left to right
-  processOperators({ binaries: ['+', '-'] })
+  processOperators({binaries: ['+', '-']})
   // 7e. and and or, in the same pass, from left to right
-  processOperators({ binaries: ['and', 'or'] })
+  processOperators({binaries: ['and', 'or']})
   // 7f. Chained comparison operators -> cchain
 
   // 7g. Comparison operators (==, !=, <, >, <=, >=), in the same pass, from left to right
-  processOperators({ binaries: ['==', '!=', '<', '>', "<=", ">="] })
+  processOperators({binaries: ['==', '!=', '<', '>', "<=", ">="]})
 
   // Step n: Provide index and endIndex information for all nodes
   applyToNodesRecursively(rootNode, node => {
@@ -876,4 +870,4 @@ function parseString(string, options={
 
 //const dat = {name: "a", children: [ {name: "b", children: [1,2,3]}, {name: "c", children: [4,5,6]}, {name: "d"} ] }
 
-export { applyToNodesRecursively, parseString }
+export {applyToNodesRecursively, parseString}

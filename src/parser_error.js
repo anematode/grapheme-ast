@@ -129,4 +129,12 @@ function errorInString(...args) {
   return new ParserError(getErrorInStringMessage(...args))
 }
 
-export { ParserError, errorInString, getErrorInStringMessage }
+function isFunction(f) {
+  return typeof f === "function"
+}
+
+function isString(s) {
+  return typeof s === "string"
+}
+
+export { ParserError, errorInString, getErrorInStringMessage, isFunction, isString }

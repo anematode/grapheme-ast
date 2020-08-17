@@ -3,7 +3,7 @@
  * @param string
  * @param onError {Function}
  */
-import {errorInString, getErrorInStringMessage, ParserError} from "./parser_error"
+import {errorInString, getErrorInStringMessage, isString, ParserError} from "./parser_error"
 
 // Whether a string is all ASCII characters
 function isASCII(str) {
@@ -290,7 +290,7 @@ const PAREN_TOKENS = [
 // properties: the type property, which is the type of the token, and the index property, which is the index of the
 // token.
 function simpleTokenizer(string) {
-  if (typeof string !== "string") {
+  if (!isString(string)) {
     throw new TypeError("expressionTokenizer given a non-string type")
   }
 
@@ -371,7 +371,7 @@ function simpleTokenizer(string) {
         continue
       }
 
-      tokens.push({ type: "variable", name, index: currentIndex })
+      tokens.push({ type: "variable", name: name, index: currentIndex })
       advanceCurrentIndex()
 
       continue
@@ -381,7 +381,7 @@ function simpleTokenizer(string) {
 
     if (tokenIndex !== -1) {
       const contents = getToken().slice(1, -1)
-      tokens.push({ type: "string", contents, index: currentIndex })
+      tokens.push({ type: "string", contents: contents, index: currentIndex })
       advanceCurrentIndex()
 
       continue
@@ -391,7 +391,7 @@ function simpleTokenizer(string) {
 
     if (tokenIndex !== -1) {
       const value = getToken()
-      tokens.push({ type: "number", value, index: currentIndex })
+      tokens.push({ type: "number", value: value, index: currentIndex })
       advanceCurrentIndex()
 
       continue
@@ -401,7 +401,7 @@ function simpleTokenizer(string) {
 
     if (tokenIndex !== -1) {
       const prop = getToken().slice(1)
-      tokens.push({ type: "property_access", prop, index: currentIndex })
+      tokens.push({ type: "property_access", prop: prop, index: currentIndex })
       advanceCurrentIndex()
 
       continue
@@ -651,11 +651,6 @@ function expressionTokenizer(string, options={implicitMultiplication: true}) {
   }
 
   return tokens
-}
-
-const tokenEnum = {
-  "comma ": "comma",
-
 }
 
 export {expressionTokenizer}
