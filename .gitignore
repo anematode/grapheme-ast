@@ -1,5 +1,5 @@
 .idea/**
 
 # Ignore generated files
-src/expression_tokenizer.js
-src/parse_string.js
+# src/expression_tokenizer.js
+# src/parse_string.js

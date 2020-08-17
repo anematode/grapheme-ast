@@ -70,10 +70,13 @@ class CyclicalError extends Error {
  *     Description: corresponds to a number in the original source.
  *     Properties:
  *       value: a string containing the number
- *   string: { type: "string", index: (number), endIndex?: (number), contents: (string) }
+ *   string: { type: "string", index: (number), endIndex?: (number), contents: (string), src: "string" | "property_access" | "operator", quote?: 0 | 1 }
  *     Description: corresponds to a string in the original source.
  *     Properties:
  *       contents: a string containing the string's contents
+ *       src: a string representing the type of the original token that gave rise to this string. property_access emits strings,
+ *         and cchain converts boolean operators to strings
+ *       quote: 0 if the string is delimited with "; 1 if it is delimited with '
  * Only tokens:
  *   comma: { type: "comma", index: (number) }
  *     Description: corresponds to a comma in the original source.
@@ -129,8 +132,6 @@ class CyclicalError extends Error {
  */
 function applyToNodesRecursively(topNode, func, childrenFirst = false, rtl = false, depth = Infinity, checkCycles = false) {
   // Check the function is being used properly
-
-  // Reenable if I can figure out more robust macros
   if (typeof topNode !== "object")
     throw new TypeError("Given topNode is not an object.")
   if (!isFunction(func))
@@ -230,7 +231,7 @@ function applyToNodesRecursively(topNode, func, childrenFirst = false, rtl = fal
       // Pop the last values in the stack, starting iteration at the parent
       nodeStack.pop()
       nodeChildIndexStack.pop()
-    } // mainLoop
+    } // main
 }
 
 // Check whether an operator (as a string) could be a prefix operator
@@ -351,6 +352,9 @@ export function nodeToString(node) {
       return '.' + node.prop
     case "paren":
       return node.paren
+    case "string":
+      const quote = (string.quote === 1) ? "'" : ((string.quote === 0) ? '"' : '')
+      return `${quote}${string.contents}${quote}`
     default:
       return ""
   }
@@ -384,6 +388,16 @@ function getEndingIndex(node) {
       return node.index + node.op.length - 1
     case "property_access":
       return node.index + node.prop.length
+    case "string":
+      switch (node.src) {
+        case "string":
+          return node.index + node.contents.length + 1
+        case "property_access":
+        case "operator":
+          return node.index + node.contents.length - 1
+        default:
+          throw new Error("Unknown string source " + node.src)
+      }
 
     default:
       throw new TypeError("Could not find ending index of node " + JSON.stringify(node))
@@ -401,6 +415,10 @@ function checkIfValidOperand(node) {
     default:
       return true
   }
+}
+
+function capitalizeFirstLetter(string) {
+  return string.charAt(0).toUpperCase() + string.slice(1);
 }
 
 /**
@@ -666,8 +684,6 @@ function parseString(string, options = {
     }
   })
 
-  const emptyParensMessage = "Empty parenthesized subexpression"
-
   // 5c: Parenthesized expressions cannot be empty or contain commas
   applyToNodesRecursively(rootNode, node => {
     if (node.type === "node") {
@@ -686,8 +702,10 @@ function parseString(string, options = {
       }
       // If we get here in execution, this is an error
 
-      const errorMsg = issue ? emptyParensMessage : "Parenthesized subexpression containing a comma"
-      const tokI = findTokenIndex(node.parenInfo?.startIndex)
+      const expressionDesc = (node === rootNode) ? "expression" : "parenthesized subexpression"
+
+      let errorMsg = issue ? ("Empty " + expressionDesc) : (capitalizeFirstLetter(expressionDesc) + " containing a comma")
+      let tokI = findTokenIndex(node.parenInfo?.startIndex)
 
       if (tokI > 0) { // means the token was found and is not the first token in the string
         const prevToken = tokens[tokI - 1]
@@ -716,6 +734,11 @@ function parseString(string, options = {
           default:
             break
         }
+      }
+
+      if (tokI && offendingCommaOperator) {
+        errorMsg = getErrorInStringMessage(string, tokI, errorMsg, "Note: Comma")
+        tokI = offendingCommaOperator.index
       }
 
       throw errorInString(string, tokI, errorMsg, issue ? "Note: Perhaps put an expression inside?" :
@@ -760,7 +783,9 @@ function parseString(string, options = {
           {
             type: "string",
             contents: c2.prop,
-            index: c2.index + 1
+            index: c2.index + 1,
+            endIndex: c2.index + c2.prop.length,
+            src: "property_access"
           }
         ]
       })
@@ -851,6 +876,8 @@ function parseString(string, options = {
   processOperators({binaries: ['+', '-']})
   // 7e. and and or, in the same pass, from left to right
   processOperators({binaries: ['and', 'or']})
+
+
   // 7f. Chained comparison operators -> cchain
 
   // 7g. Comparison operators (==, !=, <, >, <=, >=), in the same pass, from left to right

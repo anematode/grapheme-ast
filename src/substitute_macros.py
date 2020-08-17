@@ -3,7 +3,7 @@ doreplacement = False
 
 keywords = map(lambda s: r'"%s"' % s, "comma function function_token variable node number operator operator_token property_access paren string".split(' '))
 special_props = {
-  "type": "t", "index": "i", "endIndex": "e", "value": "v", "contents": "o", "children": "c", "paren": "p", "parenInfo": "a", "name": "n", "verticalBar": "b", "implicit": "m", "opening": "g", "op": "k", "parenType": "y", "prop": "r", "pID": "d"
+  "type": "t", "index": "i", "endIndex": "e", "value": "v", "contents": "C", "children": "c", "paren": "p", "parenInfo": "a", "name": "n", "verticalBar": "V", "implicit": "I", "opening": "g", "op": "k", "parenType": "P", "prop": "r", "pID": "d", "src": "s", "quote": "q"
 }
 
 def substitute_keywords(string):

@@ -380,8 +380,11 @@ function simpleTokenizer(string) {
     tokenIndex = findStringToken(string, currentIndex, charCode)
 
     if (tokenIndex !== -1) {
-      const contents = getToken().slice(1, -1)
-      tokens.push({ type: "string", contents: contents, index: currentIndex })
+      const tok = getToken()
+      const contents = tok.slice(1, -1)
+
+      // quote is 0 if " and 1 if '
+      tokens.push({ type: "string", contents: contents, index: currentIndex, quote: tok.charCodeAt(0) === 34 ? 0 : 1, src: "string" })
       advanceCurrentIndex()
 
       continue
