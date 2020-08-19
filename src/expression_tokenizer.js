@@ -118,7 +118,7 @@ function findVariableToken(string, startIndex, firstChar) {
     }
   }
 
-  if (colonCount === 2)
+  if (colonCount === 2 || colonCount === 1)
     i = lastVarEnd
 
   return (i === startIndex) ? -1 : i

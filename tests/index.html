@@ -37,15 +37,20 @@
     plot.add(tree)
     plot.setSize(window.innerWidth, window.innerHeight)
 
+    const tests = []
+
     function updateString(str) {
+      tests.push(str)
       let parsed
 
       document.getElementById("err").innerText = ""
 
       try {
         parsed = GraphemeAST.parseString(str)
+        tests.push(parsed)
       } catch (e) {
         document.getElementById("err").innerHTML = e.toString()
+        tests.push(e.toString())
         return
       }
 
@@ -58,7 +63,6 @@
         }
       })
       tree.markUpdate()
-
     }
 
     function render() {
