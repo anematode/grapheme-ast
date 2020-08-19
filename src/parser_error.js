@@ -1,7 +1,6 @@
-
 // ParserError class; represents errors encountered while parsing expressions
 class ParserError extends Error {
-  name="ParserError"
+  name = "ParserError"
 }
 
 // The maximum length of string before the error message will include ellipses surrounding the string for brevity
@@ -70,7 +69,7 @@ function generateErrorMessage(line, index, lineIndex, message, suggestedFix, inc
  * @param includeIndexInfo {boolean}
  * @returns {string}
  */
-function getErrorInStringMessage(string, index, message="Unknown error", suggestedFix="", includeIndexInfo=true) {
+function getErrorInStringMessage(string, index, message = "Unknown error", suggestedFix = "", includeIndexInfo = true) {
   // Clamp index to a valid range. Note that index=string.length will result in the error being shown immediately after
   // the end of the string. This would be used for example in an unbalanced parenthesis error
   if (index < 0)
@@ -129,12 +128,22 @@ function errorInString(...args) {
   return new ParserError(getErrorInStringMessage(...args))
 }
 
+/**
+ * Check whether f is a function
+ * @param f
+ * @returns {boolean}
+ */
 function isFunction(f) {
   return typeof f === "function"
 }
 
+/**
+ * Check whether s is a string. Fails for String(...) objects, but serves you right.
+ * @param s
+ * @returns {boolean}
+ */
 function isString(s) {
   return typeof s === "string"
 }
 
-export { ParserError, errorInString, getErrorInStringMessage, isFunction, isString }
+export {ParserError, errorInString, getErrorInStringMessage, isFunction, isString}

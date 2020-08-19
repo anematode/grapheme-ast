@@ -252,23 +252,6 @@ function findOperatorToken(string, startIndex, charCode) {
   return -1
 }
 
-function findFunctionTemplateDefinition(string, startIndex, charCode) {
-  switch (charCode) {
-    case 40: // (
-      return startIndex + 1
-    case 58: // :
-      if (string.charCodeAt(startIndex + 1) === 58) {
-        for (let i = startIndex + 2; i < string.length; ++i) { // search for the next (
-          if (string.charCodeAt(i) === 40) {
-            return i + 1
-          }
-        }
-      }
-  }
-
-  return -1
-}
-
 function findPropertyAccessToken(string, startIndex, charCode) {
   if (charCode !== 46) // matches '.', which denotes a property access
     return -1
@@ -277,22 +260,144 @@ function findPropertyAccessToken(string, startIndex, charCode) {
   return findSimpleVariableToken(string, startIndex + 1, string.charCodeAt(startIndex + 1))
 }
 
-// The paren tokens
-const PAREN_TOKENS = [
-  {type: "paren", paren: '('},
-  {type: "paren", paren: ')'},
-  {type: "paren", paren: '['},
-  {type: "paren", paren: ']'},
-  {type: "paren", paren: '|'}
-]
+/**
+ * Search for -> at startIndex in string
+ * @param string
+ * @param startIndex
+ * @param charCode
+ */
+function findArrowFunctionToken(string, startIndex, charCode) {
+  if (charCode !== 45) {
+    return -1
+  } else if (string.charCodeAt(startIndex + 1) !== 62) {
+    return -1
+  }
+
+  return startIndex + 2
+}
+
+/**
+ * This is used internally in expressionTokenizer to find template specializations of types and functions. For example,
+ * when parsing "x: pair::<complex, complex>", it will emit tokens for x, :, and pair, but will fail to match the rest
+ * of pair. This functionality is instead provided by this function. It first checks whether the first two characters
+ * at startIndex are colons; if not, it returns -1. It then proceeds to find the end of the template specialization,
+ * throwing an error if the end of the string is reached before this happens or the specialization is malformed in some
+ * way.
+ * @param string
+ * @param startIndex
+ * @param charCode
+ * @param maxTemplateDepth {number}
+ */
+export function findTemplateSpecialization(string, startIndex, charCode, maxTemplateDepth, currentDepth=0) {
+  if (charCode !== 58) // :
+    return -1
+
+  const secondColon = string.charCodeAt(startIndex + 1)
+  if (secondColon !== 58) {
+    if (secondColon === 60)
+      throw errorInString(string, startIndex + 1, "Unexpected <", getErrorInStringMessage(string,
+        startIndex, "Note: Try changing this colon to :: to turn this into a template specialization,"))
+    return -1
+  } else if (string.charCodeAt(startIndex + 2) !== 60) { // found :: but didn't find <; this is an error
+    throw errorInString(string, startIndex + 2, "Expected < for template specialization")
+  }
+
+  let correspondingIndex = -1
+  let expectingType = false
+  let expectingTypeReasonIndex = -1
+
+  function getExpectedTypeNote() {
+    let char = string.charCodeAt(expectingTypeReasonIndex)
+
+    switch (char) {
+      case 60: // <
+      case 44: // ,
+        return getErrorInStringMessage(string, expectingTypeReasonIndex, "Note: expected type because of " + String.fromCharCode(char))
+    }
+
+    return ""
+  }
+
+  let i = startIndex + 2
+
+  main: for (; i < string.length; ++i) { // Iterate through the specialization
+    const charCode = string.charCodeAt(i)
+
+    switch (charCode) {
+      case 60: // <
+        if (expectingType)
+          throw errorInString(string, i, "Expected type, found opening angle bracket", getExpectedTypeNote())
+
+        correspondingIndex = i
+
+        if (currentDepth > maxTemplateDepth)
+          throw errorInString(string, i, "Max template depth of " + maxTemplateDepth + " exceeded", "Note: maxTemplateDepth may be increased to a maximum of " +
+            MAX_TEMPLATE_DEPTH + ", though this will slow parse times.")
+
+        expectingType = true
+
+        break
+      case 62: // >
+        if (expectingType)
+          throw errorInString(string, i, "Expected type, found closing angle bracket", getExpectedTypeNote())
+
+        if (correspondingIndex !== -1) {
+          correspondingIndex = -1
+
+          if (stack.length === 0) { // We're done
+            ++i
+            break main
+          }
+
+          break
+        }
+
+        throw errorInString(string, i, "Unbalanced angle brackets in template specialization")
+      case 44: // ,
+        if (expectingType)
+          throw errorInString(string, i, "Expected type, found comma", getExpectedTypeNote())
+
+        expectingType = true
+        break
+      default:
+        if (isWhitespace(charCode))
+          break
+
+        if (expectingType) {
+          const typeToken = findSimpleVariableToken(string, i, charCode)
+
+          if (typeToken === -1)
+            throw errorInString(string, i, "Expected type", getExpectedTypeNote())
+          else if (string.charCodeAt(typeToken) === 60) // occurs when the typename is of the form type<, instead of type::<
+            throw errorInString(string, typeToken, "Unexpected token", "Note: perhaps insert :: before the opening angle bracket?")
+
+          const specialization = findTemplateSpecialization(string, typeToken, string.charCodeAt(typeToken), maxTemplateDepth, currentDepth + 1)
+
+          i = ((specialization === -1) ? typeToken : specialization) - 1
+
+          expectingType = false
+        } else throw errorInString(string, i, "Unexpected token")
+    }
+  }
+
+  if (correspondingIndex !== -1)
+    throw errorInString(string, string.length, "Unbalanced angle brackets in template specialization",
+      getErrorInStringMessage(string, correspondingIndex, "Note: Unclosed angle bracket"))
+
+  return i
+}
+
+const MAX_TEMPLATE_DEPTH = 512
+const DEFAULT_MAX_TEMPLATE_DEPTH = 16
 
 // The tokenizer converts a string expression into a stream of tokens. Each token is an object. All tokens share two
 // properties: the type property, which is the type of the token, and the index property, which is the index of the
 // token.
-function simpleTokenizer(string) {
-  if (!isString(string)) {
+function simpleTokenizer(string, maxTemplateDepth = DEFAULT_MAX_TEMPLATE_DEPTH) {
+  if (!isString(string))
     throw new TypeError("expressionTokenizer given a non-string type")
-  }
+  if (!Number.isInteger(maxTemplateDepth) || maxTemplateDepth < 0 || maxTemplateDepth > MAX_TEMPLATE_DEPTH)
+    throw new RangeError("maxTemplateDepth must be an integer in the range [0, " + MAX_TEMPLATE_DEPTH + "] inclusive.")
 
   // Length of the string
   const length = string.length
@@ -310,8 +415,20 @@ function simpleTokenizer(string) {
     currentIndex = tokenIndex
   }
 
+  function checkTypenameExpected() {
+    if (expectingTypename) {
+      throw errorInString(string, currentIndex, "Expected typename",
+        getErrorInStringMessage(string, tokens[tokens.length - 1].index, "Note: Typename expected because of preceding colon"))
+    }
+  }
+
+  // Tokens to return
   const tokens = []
 
+  // Whether or not a typename would be expected next
+  let expectingTypename = false
+
+  // The main token loop
   while (true) {
     // March along leading whitespace
     while (true) {
@@ -326,9 +443,11 @@ function simpleTokenizer(string) {
     if (currentIndex >= length) // We're done parsing the string!
       break
 
-    // The remainder of the loop is for finding tokens. The token types are paren, comma, function, variable, string, number, property_access
+    // The remainder of the loop is for finding tokens.
+    // The token types are paren, comma, function, variable, string, number, property_access,
 
-    let singleCharTokenFound = true
+    // Set if a single character token (aka a paren or a comma) is found
+    let singleCharToken
 
     // Handle simple single-character tokens
     switch (charCode) {
@@ -337,44 +456,83 @@ function simpleTokenizer(string) {
       case 91: // [
       case 93: // ]
       case 124: // |
-        tokens.push({ type: "paren", paren: String.fromCharCode(charCode), index: currentIndex, pID: -1 })
+        singleCharToken = {type: "paren", paren: String.fromCharCode(charCode), index: currentIndex, pID: -1}
         break
       case 44: // ,
-        tokens.push({ type: "comma", index: currentIndex })
+        singleCharToken = {type: "comma", index: currentIndex}
         break
-      default:
-        singleCharTokenFound = false
     }
 
-    if (singleCharTokenFound) {
+    if (singleCharToken) {
+      // Check if a typename was expected. If a paren/comma was found, throw an error
+      checkTypenameExpected()
+
+      tokens.push(singleCharToken)
       currentIndex++
 
       continue
     }
 
+    // Search for a variable token. This might actually be a typename or a function, depending on what comes after
     tokenIndex = findVariableToken(string, currentIndex, charCode)
 
     if (tokenIndex !== -1) {
-      const name = getToken()
+      // tokenIndex is the index at which to check for a (, which would make the token a function
+      // Look for a template specialization
+      const templateSpecializationToken = findTemplateSpecialization(string, tokenIndex, string.charCodeAt(tokenIndex), maxTemplateDepth)
 
-      const prospectiveFunctionIndex = tokenIndex
+      // If a template specialization was found, adjust tokenIndex
+      if (templateSpecializationToken !== -1)
+        tokenIndex = templateSpecializationToken
 
-      const functionToken = findFunctionTemplateDefinition(string, prospectiveFunctionIndex, string.charCodeAt(prospectiveFunctionIndex))
+      if (string.charCodeAt(tokenIndex) === 40) { // If the next char is (
+        if (expectingTypename)
+          throw errorInString(string, tokenIndex, "Expected typename, found function",
+            getErrorInStringMessage(string, templateSpecializationToken, "Note: Perhaps remove parenthesis"))
 
-      // If a function was found...
-      if (functionToken !== -1) {
-        tokens.push({ type: "function_token", name: string.slice(currentIndex, functionToken - 1), index: currentIndex })
-        // push a (, since that is included in function
-        tokens.push({ type: "paren", paren: '(', index: functionToken - 1, pID: -1 })
+        // tokenIndex is now the index of the opening parenthesis, which we will emit on the next loop
+        tokens.push({type: "function_token", name: string.slice(currentIndex, tokenIndex), index: currentIndex})
+      } else { // If it's not a function, it's a typename or a variable
+        const name = getToken()
 
-        currentIndex = functionToken
-        continue
+        if (templateSpecializationToken !== -1) {
+          // If there is a template, it must be a typename
+          if (!expectingTypename) // If a typename here is illegal, through an error
+            throw errorInString(string, currentIndex, "Unexpected typename", "Note: variables cannot be templated.")
+
+          // Yield a typename token
+          tokens.push({type: "typename", typename: name, index: currentIndex})
+          expectingTypename = false
+        } else {
+          // If there is no template, emit a typename or variable
+          if (expectingTypename) {
+            tokens.push({type: "typename", typename: name, index: currentIndex})
+            expectingTypename = false
+          } else {
+            tokens.push({type: "variable", name: name, index: currentIndex})
+          }
+        }
       }
 
-      tokens.push({ type: "variable", name: name, index: currentIndex })
       advanceCurrentIndex()
 
       continue
+    }
+
+    // Check whether a typename was expected. If it was, then we shouldn't be here! Throw an error
+    checkTypenameExpected()
+
+    if (charCode === 58) { // :, meaning we have a typename after
+      tokenIndex = currentIndex + 1
+
+      tokens.push({type: "colon", index: currentIndex})
+      advanceCurrentIndex()
+
+      expectingTypename = true
+
+      continue
+    } else {
+      expectingTypename = false
     }
 
     tokenIndex = findStringToken(string, currentIndex, charCode)
@@ -384,7 +542,13 @@ function simpleTokenizer(string) {
       const contents = tok.slice(1, -1)
 
       // quote is 0 if " and 1 if '
-      tokens.push({ type: "string", contents: contents, index: currentIndex, quote: tok.charCodeAt(0) === 34 ? 0 : 1, src: "string" })
+      tokens.push({
+        type: "string",
+        contents: contents,
+        index: currentIndex,
+        quote: tok.charCodeAt(0) === 34 ? 0 : 1,
+        src: "string"
+      })
       advanceCurrentIndex()
 
       continue
@@ -394,7 +558,7 @@ function simpleTokenizer(string) {
 
     if (tokenIndex !== -1) {
       const value = getToken()
-      tokens.push({ type: "number", value: value, index: currentIndex })
+      tokens.push({type: "number", value: value, index: currentIndex})
       advanceCurrentIndex()
 
       continue
@@ -404,7 +568,16 @@ function simpleTokenizer(string) {
 
     if (tokenIndex !== -1) {
       const prop = getToken().slice(1)
-      tokens.push({ type: "property_access", prop: prop, index: currentIndex })
+      tokens.push({type: "property_access", prop: prop, index: currentIndex})
+      advanceCurrentIndex()
+
+      continue
+    }
+
+    tokenIndex = findArrowFunctionToken(string, currentIndex, charCode)
+
+    if (tokenIndex !== -1) {
+      tokens.push({type: "arrow_function_token", index: currentIndex})
       advanceCurrentIndex()
 
       continue
@@ -414,7 +587,7 @@ function simpleTokenizer(string) {
 
     if (tokenIndex !== -1) {
       const op = getToken()
-      tokens.push({ type: "operator_token", op: simpleOperators[op], index: currentIndex, implicit: false })
+      tokens.push({type: "operator_token", op: simpleOperators[op], index: currentIndex, implicit: false})
       advanceCurrentIndex()
 
       continue
@@ -426,7 +599,7 @@ function simpleTokenizer(string) {
   return tokens
 }
 
-function parenToDescriptor(token, plural=false) {
+function parenToDescriptor(token, plural = false) {
   switch (token.paren) {
     case '(':
     case ')':
@@ -441,7 +614,7 @@ function parenToDescriptor(token, plural=false) {
   }
 }
 
-function parenToCompleteDescriptor(token, plural=false) {
+function parenToCompleteDescriptor(token, plural = false) {
   if (!token.hasOwnProperty("opening"))
     return ""
 
@@ -613,8 +786,8 @@ function isCloseParen(token) {
  * @param string
  * @param options
  */
-function expressionTokenizer(string, options={implicitMultiplication: true}) {
-  let tokens = simpleTokenizer(string)
+function expressionTokenizer(string, options = {implicitMultiplication: true, maxTemplateDepth: DEFAULT_MAX_TEMPLATE_DEPTH}) {
+  let tokens = simpleTokenizer(string, options.maxTemplateDepth ?? DEFAULT_MAX_TEMPLATE_DEPTH)
 
   checkParensBalanced(string, tokens)
 
@@ -643,7 +816,7 @@ function expressionTokenizer(string, options={implicitMultiplication: true}) {
         && ((type2 === "paren" && isOpenParen(token2)) || (type2 === "number" || type2 === "variable" || type2 === "function_token"))
 
       if (implicitMult)
-        newTokens.push({ type: "operator_token", op: '*', index: token2.index - 1, implicit: true })
+        newTokens.push({type: "operator_token", op: '*', index: token2.index - 1, implicit: true})
     }
 
     newTokens.push(token2)
@@ -653,5 +826,7 @@ function expressionTokenizer(string, options={implicitMultiplication: true}) {
 
   return tokens
 }
+
+expressionTokenizer.DEFAULT_MAX_TEMPLATE_DEPTH = DEFAULT_MAX_TEMPLATE_DEPTH
 
 export {expressionTokenizer}

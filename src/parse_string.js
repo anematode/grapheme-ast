@@ -7,17 +7,20 @@ import {applyToNodesRecursively} from "./traverse_nodes"
  * @param arr {Array}
  * @param func {Function} Signature is (elem1, elem2, elem1index, skipNextPair)
  * @param includeEnds {boolean} Whether to call func with the additional calls (undefined, first), (last, undefined)
+ * @param rtl {boolean} Whether to iterate right to left
  */
-function pairwise(arr, func, includeEnds = true) {
-  const top = arr.length - 1 + includeEnds
-  let i = -includeEnds
+function pairwise(arr, func, includeEnds = true, rtl = false) {
+  const top = arr.length + includeEnds - 2
+  const bottom = -includeEnds
+
+  let i = rtl ? top : bottom
 
   // Callback used when we want to skip the next pair (e.g. when we are collapsing functions)
   function skipNextPair() {
-    ++i
+    rtl ? --i : ++i
   }
 
-  for (; i < top; i++) {
+  for (; rtl ? (i >= bottom) : (i <= top); skipNextPair()) {
     func(arr[i], arr[i + 1], i, skipNextPair)
   }
 }
@@ -34,10 +37,11 @@ function triplewise(arr, func, includeEnds = true, rtl = true) {
   let upper = arr.length - lower - 1
   let i = rtl ? upper : lower
 
-  function skipNextTriple() {
-    rtl ? (--i) : (++i)
-  }
-
+  /**
+   * Function that might be called by func. Calling it with an array will replace the elements between i-1 and i+1,
+   * inclusive, with a subarray. This could definitely be optimized a lot.
+   * @param subarr {Array}
+   */
   function replaceWith(subarr) {
     // Replace arr[i-1] through arr[i+1] with subarr
     if (i === 0)
@@ -51,13 +55,161 @@ function triplewise(arr, func, includeEnds = true, rtl = true) {
       --i
   }
 
-  // i is the index of the middle element
-  for (; rtl ? (i >= lower) : (i <= arr.length - lower - 1); skipNextTriple()) {
+  // i is the index of the middle element. Iterate either LTR or RTL
+  for (; rtl ? (i >= lower) : (i <= arr.length - lower - 1); rtl ? (--i) : (++i)) {
     func(arr[i - 1], arr[i], arr[i + 1], i, replaceWith)
   }
 }
 
-class CyclicalError extends Error {
+/**
+ * Checks if str is a simple variable, i.e. matches the form [A-Za-z_][A-Za-z0-9_]*
+ * @param str
+ */
+function isSimpleVariable(str) {
+  return !!/[A-Za-z_][A-Za-z0-9_]*/.exec(str)
+}
+
+/**
+ * Return an error for when an arrow function with ambiguous arguments is given
+ * @param typeAnnotation
+ * @returns {string}
+ */
+function getDisallowedArrowFunctionArgErr(typeAnnotation) {
+  const varName = typeAnnotation.children[0]
+  const typename = typeAnnotation.children[1]
+
+  return `Note: Arrow function arguments of the form \"${varName}: ${typename} -> ...\" are ` +
+    `disallowed because of potential ambiguity. Make it explicit with \"(${varName}): ${typename} -> ...\" or \"(${varName}: ${typename}) -> ...\".`
+}
+
+/**
+ * Throw an error if the node is too deep
+ * @param root {Object}
+ * @param maxDepth {number}
+ */
+function checkExprDepth(root, maxDepth) {
+  applyToNodesRecursively(root, (_node, _parent, depth) => {
+    if (depth > maxDepth)
+      throw new ParserError("Expression is too deeply nested! Max depth of " + maxDepth + " exceeded." +
+        "\nNote: The max expression depth can be raised, and is in fact Infinity by default.")
+  })
+}
+
+/**
+ * Takes in a string and args node and returns an arguments node. This node has the following form:
+ * {type: "arrow_signature", index: (start index), endIndex: (end index), vars: (array of var tokens), types: (array of type tokens,
+ * implicit: true if assumed), returnType: (type token, implicit: true if assumed)}
+ * @param string
+ * @param args
+ */
+function processArrowFunctionSignature(string, args) {
+  /**
+   * Get implicit return type node
+   * @returns {{implicit: boolean, endIndex: number, index: number, type: string, typename: string}}
+   */
+  function getImplicitTypeInfo() {
+    const argsEnd = getEndingIndex(args)
+    return {
+      index: argsEnd + 1,
+      endIndex: argsEnd + 1,
+      type: "typename",
+      typename: "real",
+      implicit: true
+    }
+  }
+
+  switch (args.type) {
+    // The simplest case, where all types are assumed
+    case "variable": {
+      const typeInfo = getImplicitTypeInfo()
+
+      return {
+        type: "arrow_signature",
+        index: args.index,
+        endIndex: typeInfo.index - 1,
+        vars: [args],
+        types: [typeInfo],  // type of variable is implicitly real
+        returnType: null // Unknown return type, must be figured out later
+      }
+    }
+    // The case  (... arguments ...): type -> ...
+    case "type_annotation":
+      const realArgs = args.children[0]
+
+      if (realArgs.type !== "node") {
+        // Special note for the case  x: type -> ..., which is disallowed due to ambiguity
+        const note = realArgs.type === "variable" ? getDisallowedArrowFunctionArgErr(args) : ""
+        throw errorInString(string, realArgs.index, "Invalid argument list", note)
+      }
+
+      const ret = processArrowFunctionSignature(string, realArgs)
+      const returnType = ret.returnType = args.children[1]
+
+      returnType.endIndex = getEndingIndex(returnType)
+
+      return ret
+    case "node": {
+      const vars = []
+      const types = []
+
+      // Iterate through arguments and add them to vars/types
+      for (const item of args.children) {
+        if (item.type === "typename")
+          throw errorInString(string, item.index, "Unexpected typename in arrow function arguments")
+        else if (item.type === "node")
+          throw errorInString(string, item.index, "Unexpected subexpression in arrow function arguments")
+        else if (item.type === "colon")
+          throw errorInString(string, item.index, "Unexpected colon in arrow function arguments")
+        else if (item.type === "comma") {
+        }
+        // Commas aren't processed, so we can just ignore it
+        else if (item.type === "variable") {
+          // If type is variable, assume the variable is real
+
+          // Make sure the variable has a valid name
+          if (!isSimpleVariable(item.name))
+            throw errorInString(string, item.index, "Arguments to an arrow function cannot be namespaced")
+
+          vars.push(item)
+          const endingIndex = getEndingIndex(item) + 1
+          const implicitType = {
+            index: endingIndex,
+            endIndex: endingIndex,
+            implicit: true,
+            type: "typename",
+            typename: "real"
+          }
+
+          types.push(implicitType)
+        } else if (item.type === "type_annotation") {
+          const variable = item.children[0], type = item.children[1]
+
+          // Make sure the variable has a valid name
+          if (!isSimpleVariable(variable.name))
+            throw errorInString(string, item.index, "Arguments to an arrow function cannot be namespaced")
+
+          vars.push(variable)
+          types.push(type)
+        } else {
+          throw errorInString(string, item.index, "Unexpected token in arrow function arguments")
+        }
+      }
+
+      // Calculate ending indices, since this won't be done elsewhere
+      vars.forEach(variable => variable.endIndex = getEndingIndex(variable))
+
+      return {
+        type: "arrow_signature",
+        index: args.index,
+        endIndex: getEndingIndex(args),
+        returnType: null,  // No known return type (yet)
+        vars,
+        types
+      }
+    }
+    default:
+      throw errorInString(string, args.index, "Invalid arrow function arguments")
+  }
 }
 
 /**
@@ -243,6 +395,14 @@ export function nodeToString(node) {
         default:
           throw new Error("Operator somehow has arity that's not one or two??")
       }
+    case "type_annotation":
+      return `${nodeToString(node.children[0])}: ${nodeToString(node.children[1])}`
+    case "arrow_function":
+      return `${nodeToString(node.arguments)} -> ${nodeToString(node.children)}`
+    case "arrow_signature":
+      return `(${node.vars.map((v, i) => nodeToString(v) + ': ' + nodeToString(node.types[i])).join(', ')}): ${nodeToString(node.returnType)}`
+    case "typename":
+      return node.typename
     case "operator_token":
       return node.op
     case "property_access":
@@ -252,6 +412,10 @@ export function nodeToString(node) {
     case "string":
       const quote = (string.quote === 1) ? "'" : ((string.quote === 0) ? '"' : '')
       return `${quote}${string.contents}${quote}`
+    case "arrow_function_token":
+      return "->"
+    case "colon":
+      return ":"
     default:
       return ""
   }
@@ -277,7 +441,7 @@ function getEndingIndex(node) {
 
   // If node is an array, convert it to an intermediate form (rarely used)
   if (Array.isArray(node))
-    node = { children: node }
+    node = {children: node}
 
   // If the node has children, find the last child's ending index
   if (node.children)
@@ -285,8 +449,10 @@ function getEndingIndex(node) {
 
   // Cases for various node types, calculating the endIndex based on the node
   switch (node.type) {
+    // Nodes with length 1 have endIndex == index
     case "comma":
     case "paren":
+    case "colon":
       return node.index
     case "function_token":
     case "variable":
@@ -308,6 +474,10 @@ function getEndingIndex(node) {
         default:
           throw new Error("Unknown string source " + node.src)
       }
+    case "typename":
+      return node.index + node.typename.length - 1
+    case "arrow_function_token":
+      return node.index + 1
     default:
       throw new TypeError("Could not find ending index of node " + JSON.stringify(node))
   }
@@ -325,6 +495,8 @@ function checkIfValidOperand(node) {
     case "function_token":
     case "operator_token":
     case "property_access":
+    case "arrow_function_token":
+    case "colon":
       return false
     default:
       return true
@@ -361,20 +533,18 @@ const secondOperatorPass = [{"ops": {"binaries": ["==", "!=", "<", ">", "<=", ">
  * @param string
  * @param options
  */
-function parseString(string, options = {implicitMultiplication: true}) {
+function parseString(string, options = {}) {
   // The parsing steps are as follows:
-  // 0. Tokenize (this includes checking for balanced parens)
-  // 1. Check token validity
-  //   a. Function templates not malformed
+  // 1. Tokenize (this includes checking for balanced parens)
   // 2. Check certain common token patterns that will certainly lead to errors later
   //   a. operator followed by non-unary operator or closing parenthesis
   //   b. unary operator or opening parenthesis followed by non-unary operator
   // 3. Collapse parenthesized expressions into subnodes, recursively, keeping track of the paren types
   // 4. Convert | ... | into abs( ... )
-  // 5. Process functions
-  //   a. Convert f(node) into f{node.split(comma)}
+  // 5. Process functions: convert f(node) into f{node.split(comma)}
   // 6. Process property accesses from right to left
-  // 7. Process operators recursively
+  // 7. Process type annotations
+  // 8. Process operators recursively
   //   a. Double factorials and factorials, in the same pass, from left to right
   //   b. Exponentiation and unary minus/plus, in the same pass, from right to left
   //   c. Multiplication and division, in the same pass, from left to right
@@ -382,28 +552,43 @@ function parseString(string, options = {implicitMultiplication: true}) {
   //   e. and and or, in the same pass, from left to right
   //   f. Chained comparison operators -> cchain
   //   g. Comparison operators (==, !=, <, >, <=, >=), in the same pass, from left to right
-  // 8. Check for unprocessed tokens
-  // 9. Add index / endIndex information to all nodes
+  // 9. Process arrow functions into nodes of the form { type: "arrow_function", signature: (arrow_signature node), children:
+  //   [ ... single item, the return value of the function ... ] }
+  // 10. Check for spurious commas or empty subexpressions
+  // 11. Check for unprocessed tokens
+  // 12. Add index / endIndex information to all nodes
+  // 13. (optional) Party!
 
-  // Step 0
+  // Default opts
+  options = Object.assign({
+    implicitMultiplication: true,
+    maxTemplateDepth: expressionTokenizer.DEFAULT_MAX_TEMPLATE_DEPTH, // 16 by default
+    maxExpressionDepth: Infinity
+  }, options)
+
+  // Step 1
   const tokens = expressionTokenizer(string, options)
 
   // If there are no tokens, return null
   if (tokens.length === 0)
     return null
 
+  /**
+   * Given an index in the string, find the index in tokens of the token with that index
+   * @param index
+   * @returns {number}
+   */
   function findTokenIndexByIndex(index) {
     return tokens.findIndex(tok => tok.index === index)
   }
 
-  // Step 1
-
   // Some common help messages
-  const startingOperatorHelp = "Perhaps remove the operator, or add a value after the operator?"
-  const trailingOperatorHelp = "Perhaps remove the operator, or add a value before the operator?"
-  const extraCommaHelp = "Perhaps remove the comma? Note that Grapheme does not have default arguments; extraneous commas cannot be used to omit a function argument."
+  const startingOperatorHelp = "Note: Perhaps remove the operator, or add a value after the operator?"
+  const trailingOperatorHelp = "Note: Perhaps remove the operator, or add a value before the operator?"
+  const extraCommaHelp = "Note: Perhaps remove the comma? Note that Grapheme does not have default arguments; extraneous commas cannot be used to omit a function argument."
+  const dumbPropertyAccess = "Note: Perhaps remove the property access, or have it access some value?"
 
-  // Step 2
+  // Step 2: check common errors
   pairwise(tokens, (tok1, tok2) => {
     // Types of each token
     const type1 = tok1?.type
@@ -413,7 +598,7 @@ function parseString(string, options = {implicitMultiplication: true}) {
     if (type1 === "operator_token") {
       if (type2 === "operator_token") {
         if (!couldBePrefixOp(tok2.op))
-          throw errorInString(string, tok2.index, "Operator followed by non-unary operator", "Perhaps remove one of the operators?")
+          throw errorInString(string, tok2.index, "Operator followed by non-unary operator", "Note: Perhaps remove one of the operators?")
       } else if (type2 === "paren" && !couldBePrefixOp(tok1.op)) {
         if (!tok2.opening)
           throw errorInString(string, tok1.index, "Operator immediately followed by closing parenthesis", trailingOperatorHelp)
@@ -448,13 +633,13 @@ function parseString(string, options = {implicitMultiplication: true}) {
 
     // e. No ending commas in a subexpression
     if (type1 === "comma" && (!tok2 || (type2 === "paren" && !tok1.opening))) {
-      throw errorInString(string, tok1.index, "Comma at end of " + (tok2 ? "parenthesized subexpression" : "expression"), "Perhaps remove the comma?")
+      throw errorInString(string, tok1.index, "Comma at end of " + (tok2 ? "parenthesized subexpression" : "expression"), "Note: Perhaps remove the comma?")
     }
 
     // f. No random ass property accesses (after opening parens, operators, commas)
     if (type2 === "property_access") {
       if ((type1 === "paren" && tok1.opening) || !tok1 || type1 === "comma" || type1 === "operator_token")
-        throw new errorInString(string, tok2.index, "Property access on nothing", "Perhaps remove the property access, or have it access some value?")
+        throw new errorInString(string, tok2.index, "Property access on nothing", dumbPropertyAccess)
     }
   }, true)
 
@@ -523,12 +708,10 @@ function parseString(string, options = {implicitMultiplication: true}) {
   const rootNode = {type: "node", children: newTokens, parenType: "", index: newTokens[0].index}
 
   // Step 4: Convert | ... | into abs( ... ). This will mean a node of the form {type: "function", name: "abs",
-  // parenInfo: {startIndex, endIndex, verticalBar: true}, index: (index of first bar), children: []}. Note that an abs function
-  // declaration will not have a verticalBarInfo property.
+  // parenInfo: {startIndex, endIndex, verticalBar: true}, index: (index of first bar), children: []}. Note that an abs
+  // function declaration will not have parenInfo.verticalBar, distinguishing it from | ... |.
   applyToNodesRecursively(rootNode, node => {
     const children = node.children
-    if (!children)
-      return
 
     for (let i = 0; i < children.length; ++i) {
       const child = children[i]
@@ -553,7 +736,7 @@ function parseString(string, options = {implicitMultiplication: true}) {
   }, false, false, true)
 
   // Step 5: Process functions.
-  // a. We look for token pairs of the form  <function_token> <node> and replace the pair with a single node of the form
+  // We look for token pairs of the form  <function_token> <node> and replace the pair with a single node of the form
   // {type: "function", name: (function name), index: (index of fn name), children: [ ... children of node ... ]}
   // We apply it to children first because that makes more sense
   applyToNodesRecursively(rootNode, node => {
@@ -589,7 +772,7 @@ function parseString(string, options = {implicitMultiplication: true}) {
           },
           index: e1.index,
           endIndex: e2.endIndex,
-          children: e2.children
+          children: processFunctionArguments(e2.children)
         }
 
         newChildren.push(newNode)
@@ -602,94 +785,13 @@ function parseString(string, options = {implicitMultiplication: true}) {
     node.children = newChildren
   }, true, false, true)
 
-  // 5b. Process function arguments by taking the tokens in each function's children list and splitting them by the
-  // comma token into separate nodes.
-  applyToNodesRecursively(rootNode, node => {
-    const children = node.children
-    if (!children)
-      return
-
-    for (let i = 0; i < children.length; ++i) {
-      const child = children[i]
-
-      // Process function arguments
-      if (child.type === "function") {
-        child.children = processFunctionArguments(child.children)
-      }
-    }
-  }, false, false, true)
-
-  // 5c: Parenthesized expressions cannot be empty or contain commas
-  applyToNodesRecursively(rootNode, node => {
-    if (node.type === "node") {
-      const subchildren = node.children
-
-      let issue = 0    // enum: 1 means empty parenthesized subexpression, 0 means subexpression with comma
-      let offendingCommaOperator
-
-      if (subchildren.length === 0) {
-        issue = 1
-      } else {
-        offendingCommaOperator = subchildren.find(child => child.type === "comma")
-
-        if (!offendingCommaOperator)
-          return
-      }
-      // If we get here in execution, this is an error
-
-      const expressionDesc = (node === rootNode) ? "expression" : "parenthesized subexpression"
-
-      let errorMsg = issue ? ("Empty " + expressionDesc) : (capitalizeFirstLetter(expressionDesc) + ", containing a comma,")
-
-      // Index of the paren node
-      let tokI = findTokenIndexByIndex(node.index)
-
-      if (tokI > 0) { // means the token was found and is not the first token in the string
-        const prevToken = tokens[tokI - 1]
-
-        // ppTokenI is the index of the likely culprit token. If implicit multiplication is turned on, it will be tokI - 2
-        let ppTokenI = tokI - 1
-        let implicitLikely = false
-
-        switch (prevToken.type) {
-          case "operator_token":
-            if (prevToken.implicit) { // aha, implicit multiplication
-              ppTokenI = tokI - 2
-              implicitLikely = true
-            }
-          case "variable": // aha, implicit multiplication is probably turned off and they intended a function call
-            const prevprevToken = tokens[ppTokenI]
-
-            if (prevprevToken?.type === "variable") { // Yes!
-              throw errorInString(string, tokI, errorMsg, "Note: It looks like you intended to evaluate the function " + prevprevToken.name +
-                ", but because of the whitespace between the function name and the function's arguments, it was parsed as \"" +
-                nodeToString(tokens.slice(tokI - 1 - implicitLikely, tokI + 1)) + "...\" ." +
-                getErrorInStringMessage(string, getEndingIndex(prevprevToken) + 1, "\nNote: Consider removing this whitespace", ""))
-            }
-
-            break
-          default:
-            break
-        }
-      }
-
-      if (tokI && offendingCommaOperator) {
-        errorMsg = getErrorInStringMessage(string, tokI, errorMsg, "Note: Comma")
-        tokI = offendingCommaOperator.index
-      }
-
-      throw errorInString(string, tokI, errorMsg, issue ? "Note: Perhaps put an expression inside?" :
-        "Note: Perhaps remove the comma? Grapheme does not have the concept of a comma operator; commas are only valid in function calls.")
-    }
-  }, false, false, false)
-
   // Step 6: Process property accesses from right to left.
   // Property accesses are abstracted as {type: "operator", op: ".", children: [ obj, string: prop ]}.
   applyToNodesRecursively(rootNode, node => {
     const children = node.children
 
     // Early exit condition; if there are no children or no property accesses, continue
-    if (!children || !children.some(child => child.type === "property_access"))
+    if (!children.some(child => child.type === "property_access"))
       return
 
     const newChildren = []
@@ -706,7 +808,7 @@ function parseString(string, options = {implicitMultiplication: true}) {
       }
 
       if (!c1) // Should never happen
-        throw errorInString(string, c2.index, "Property access on nothing", "Perhaps remove the property access, or have it access some value?")
+        throw errorInString(string, c2.index, "Property access on nothing", dumbPropertyAccess)
 
       const lastChild = newChildren.pop()  // pop c1. In the case of chained accesses it might be a property access
 
@@ -731,6 +833,43 @@ function parseString(string, options = {implicitMultiplication: true}) {
     node.children = newChildren
   }, false, false, true)
 
+  // Step 7: Convert triples of the form <variable> <colon> <typename> into { type: "type_annotation", children: [variable,
+  // typename], index: variable.index, endIndex: getEndingIndex(typename) }
+  applyToNodesRecursively(rootNode, node => {
+    const children = node.children
+
+    triplewise(children, (e1, e2, e3, _, replaceWith) => {
+      if (e2.type === "colon") {
+        if (!e1)
+          throw errorInString(string, e2.index, "Unexpected colon")
+        if (!e3)
+          throw errorInString(string, e2.index, "Unexpected colon: missing typename",
+            getErrorInStringMessage(string, e2.index + 1, "Note: Add typename ", "or remove the colon to assume the variable is real"))
+
+        if (e1.type !== "variable" && e1.type !== "node")
+          throw errorInString(string, e1.index, "Expected variable before colon")
+        if (e3.type !== "typename")
+          throw errorInString(string, e3.index, "Expected typename after colon")
+
+        // Create the type annotation
+        replaceWith([
+          {
+            type: "type_annotation",
+            children: [e1, e3],
+            index: e1.index,
+            endIndex: getEndingIndex(e3)
+          }
+        ])
+      }
+    })
+  }, true, false, true)
+
+  /**
+   * Throw an informative error if other is not a valid operand
+   * @param operator
+   * @param other
+   * @param type {string} "binary" | "unary" | "postfix"
+   */
   function checkOperandValid(operator, other, type) {
     if (!checkIfValidOperand(other)) {
       throw errorInString(string, operator.index, `Can't process ${type} operator ${operator.op} on node "${nodeToString(other)}"`,
@@ -742,6 +881,9 @@ function parseString(string, options = {implicitMultiplication: true}) {
   // [...], postfixes: [...] }, rtl: (boolean) }.
   let operatorPasses
 
+  /**
+   * Given operatorPasses, combine the requested operators in one giant pass of all nodes in the requested order
+   */
   function doIt() {
     applyToNodesRecursively(rootNode, node => {
       const children = node.children
@@ -798,12 +940,12 @@ function parseString(string, options = {implicitMultiplication: true}) {
     }, true)
   }
 
-  // Step 7: Process operators recursively.
-  // 7a-e. Process non-boolean operators
+  // Step 8: Process operators recursively.
+  // 8a-e. Process non-boolean operators
   operatorPasses = firstOperatorPass
   doIt()
 
-  // 7f. Chained comparison operators -> cchain
+  // 8f. Chained comparison operators -> cchain
   // To find cchain nodes, we search through the nodes and greedily look for node patterns like
   // [non op] boolean op [non op] boolean op [non op] ... . Once the largest such pattern has been matched,
   // we collapse it to a single cchain node. cchain has the following signature:
@@ -814,7 +956,7 @@ function parseString(string, options = {implicitMultiplication: true}) {
     const children = node.children
 
     // This means the node can't be a cchain
-    if (!children || children.length < 5 || children.length % 2 === 0)
+    if (children.length < 5 || children.length % 2 === 0)
       return
 
     for (let i = 0; i < children.length; ++i) {
@@ -849,11 +991,115 @@ function parseString(string, options = {implicitMultiplication: true}) {
     }
   }, false, false, true)
 
-  // 7g. Comparison operators (==, !=, <, >, <=, >=), in the same pass, from left to right
+  // 8g. Comparison operators (==, !=, <, >, <=, >=), in the same pass, from left to right
   operatorPasses = secondOperatorPass
   doIt()
 
-  // 8. Make sure there are no residual tokens
+  // Step 9: Process arrow functions: collapse node1 -> node2 into
+  // { type: "arrow_function", index: node1.index, endIndex: node2.endIndex, arrowIndex: (index of ->), children:
+  // [ node1, node2 ] }
+  applyToNodesRecursively(rootNode, node => {
+    const children = node.children
+
+    if (!children.some(child => child.type === "arrow_function_token"))
+      return
+
+    triplewise(children, (e1, e2, e3, _, replaceWith) => {
+      if (e2.type === "arrow_function_token") { // YUM
+        if (!e1) {
+          throw errorInString(string, e2.index, "Arrow function without arguments", "Note: To make an arrow function accepting no arguments, use the syntax () -> ....")
+        } else if (!e3) {
+          throw errorInString(string, e2.index, "Arrow function without definition", "Note: Add an expression after the arrow function.")
+        }
+
+        if (e1.type !== "node" && e1.type !== "variable" && e1.type !== "type_annotation") {
+          throw errorInString(string, e1.index, "Invalid arrow function arguments",
+            "Note: Arrow functions must be of the form () -> ..., (a: type, b) -> ..., (a: type, b): type -> ..., a -> ...." +
+            "\nVariables without annotated types are assumed to be real.")
+        }
+
+        const args = processArrowFunctionSignature(string, e1)
+
+        const node = {
+          type: "arrow_function",
+          signature: args,
+          index: e1.index,
+          arrowIndex: e2.index,
+          endIndex: getEndingIndex(e3),
+          children: [e3]
+        }
+
+        replaceWith([node])
+      }
+    })
+  }, true, true, true)
+
+  // Step 10: Parenthesized expressions cannot be empty or contain commas
+  applyToNodesRecursively(rootNode, node => {
+    if (node.type === "node") {
+      const subchildren = node.children
+
+      let issue = 0    // enum: 1 means empty parenthesized subexpression, 0 means subexpression with comma
+      let offendingCommaOperator // The comma that's pissing the parser off
+
+      if (subchildren.length === 0) {
+        issue = 1
+      } else {
+        offendingCommaOperator = subchildren.find(child => child.type === "comma")
+
+        if (!offendingCommaOperator)
+          return
+      }
+      // If we get here in execution, this is an error
+
+      const expressionDesc = (node === rootNode) ? "expression" : "parenthesized subexpression"
+
+      let errorMsg = issue ? ("Empty " + expressionDesc) : (capitalizeFirstLetter(expressionDesc) + ", containing a comma,")
+
+      // Index of the paren node
+      let tokI = findTokenIndexByIndex(node.index)
+
+      if (tokI > 0) { // means the token was found and is not the first token in the string
+        const prevToken = tokens[tokI - 1]
+
+        // ppTokenI is the index of the likely culprit token. If implicit multiplication is turned on, it will be tokI - 2
+        let ppTokenI = tokI - 1
+        let implicitLikely = false
+
+        switch (prevToken.type) {
+          case "operator_token":
+            if (prevToken.implicit) { // aha, implicit multiplication
+              ppTokenI = tokI - 2
+              implicitLikely = true
+            }
+          // intended fall through, now that a new value of ppTokenI and implicitLikely (maybe) is set
+          case "variable": // aha! implicit multiplication is probably turned off and they intended a function call
+            const prevprevToken = tokens[ppTokenI]
+
+            if (prevprevToken?.type === "variable") { // Yes!
+              throw errorInString(string, tokI, errorMsg, "Note: It looks like you intended to evaluate the function " + prevprevToken.name +
+                ", but because of the whitespace between the function name and the function's arguments, it was parsed as \"" +
+                nodeToString(tokens.slice(tokI - 1 - implicitLikely, tokI + 1)) + "...\" ." +
+                getErrorInStringMessage(string, getEndingIndex(prevprevToken) + 1, "\nNote: Consider removing this whitespace", ""))
+            }
+
+            break
+          default:
+            break
+        }
+      }
+
+      if (tokI && offendingCommaOperator) {
+        errorMsg = getErrorInStringMessage(string, tokI, errorMsg, "Note: Comma")
+        tokI = offendingCommaOperator.index
+      }
+
+      throw errorInString(string, tokI, errorMsg, issue ? "Note: Perhaps put an expression inside?" :
+        "Note: Perhaps remove the comma? Grapheme does not have the concept of a comma operator; commas are only valid in function calls.")
+    }
+  }, false, false, false)
+
+  // Step 11: Make sure there are no residual tokens
   applyToNodesRecursively(rootNode, node => {
     switch (node.type) {
       case "comma":
@@ -861,11 +1107,14 @@ function parseString(string, options = {implicitMultiplication: true}) {
       case "function_token":
       case "operator_token":
       case "property_access":
-        throw errorInString(string, node.index, "Unprocessed token", "This error should never happen; please contact timothy.herchen@gmail.com or open up an issue on GitHub with the stack trace.")
+      case "colon":
+      case "typename":
+      case "arrow_function_token":
+        throw errorInString(string, node.index, "Unprocessed token \"" + node.type + "\"", "Note: Perhaps remove the token?")
     }
   }, false, false, false)
 
-  // Step 9: Provide index and endIndex information for all nodes
+  // Step 12: Provide index and endIndex information for all nodes
   applyToNodesRecursively(rootNode, node => {
     if (node.index === undefined) {
       node.index = getStartingIndex(node)
@@ -874,7 +1123,12 @@ function parseString(string, options = {implicitMultiplication: true}) {
     }
   }, true)
 
+  const maxExprDepth = options.maxExpressionDepth
+
+  if (maxExprDepth !== Infinity)
+    checkExprDepth(rootNode, maxExprDepth)
+
   return rootNode
 }
 
-export {applyToNodesRecursively, parseString}
+export {parseString}
