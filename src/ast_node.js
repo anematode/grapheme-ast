@@ -1,4 +1,5 @@
 import {applyToNodesRecursively} from "./traverse_nodes"
+import {ParserError} from "./parser_error"
 
 /**
  * Abstraction of a node in a Grapheme expression. This is the base class; there are a variety of node types which
@@ -59,24 +60,50 @@ class ConstantNode extends ASTNode {
 }
 
 class NumberNode extends ConstantNode {
+  constructor({ value }) {
+    super()
+
+    this.value = value
+  }
+
   nodeType() {
     return "number"
   }
 }
 
 class StringNode extends ConstantNode {
+  constructor({ contents, quote }) {
+    super()
+
+    this.value = contents
+    this.quote = quote
+  }
+
   nodeType() {
     return "string"
   }
 }
 
 class OperatorNode extends ASTNode {
+  constructor({ op, implicit }) {
+    super()
+
+    this.op = op
+    this.implicit = implicit
+  }
+
   nodeType() {
     return "operator"
   }
 }
 
 class FunctionNode extends OperatorNode {
+  constructor({ name, op, implicit }) {
+    super({op, implicit})
+
+    this.name = name
+  }
+
   nodeType() {
     return "function"
   }
@@ -88,26 +115,57 @@ class ArrowFunctionNode extends ASTNode {
   }
 }
 
+class GroupingNode extends ASTNode {
+  constructor({ parenType }) {
+    super()
+
+    this.parenType = parenType
+  }
+
+  nodeType() {
+    return "group"
+  }
+}
+
+class VariableNode extends ASTNode {
+  constructor({ name }) {
+    super()
+
+    this.name = name
+  }
+
+  nodeType() {
+    return "variable"
+  }
+}
+
+const typeClassMap = {
+  number: NumberNode,
+  string: StringNode,
+  variable: VariableNode,
+  node: GroupingNode,
+  function: FunctionNode,
+  operator: OperatorNode,
+  arrow_function: ArrowFunctionNode
+}
 
 function constructNodeFromObj(obj) {
-  switch (obj.type) {
-    case "number": {
-      const node = new NumberNode()
+  const constructor = typeClassMap[obj.type]
+  if (!constructor) {
+      throw new ParserError("Huh? Can't convert token of type " + obj.type)
+  }
 
-      node.token = obj
-      node.value = obj.value
+  const node = new constructor(obj)
 
-      
-    }
-    case "string":
+  node.token = obj
 
-    case "node":
+  return node
+}
 
-    case "function":
-
-    case "operator":
-
-    case "arrow_function":
+export class Expression {
+  constructor(string, rootNode) {
+    this.string = string
+    this.rootNode = rootNode
   }
 }
 
@@ -116,17 +174,24 @@ function constructNodeFromObj(obj) {
  * Also deletes each node's children property.
  * @param parsedObj
  */
-function objectToNode(parsedObj) {
-  applyToNodesRecursively(parsedObj, (child, _, parent) => {
+export function objectToNode(parsedObj) {
+  let ret
+
+  applyToNodesRecursively(parsedObj, (child, parent) => {
     const node = constructNodeFromObj(child)
 
     child.node = node
 
-    parent.node.addChild(node)
+    if (!parent)
+      ret = node
+    else
+      parent.node.addChild(node)
   })
 
   applyToNodesRecursively(parsedObj, (child) => {
     delete child.children
     delete child.node
-  })
+  }, true)
+
+  return ret
 }

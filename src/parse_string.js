@@ -1,6 +1,7 @@
 import {expressionTokenizer} from "./expression_tokenizer.js"
 import {errorInString, getErrorInStringMessage, ParserError} from "./parser_error.js"
 import {applyToNodesRecursively} from "./traverse_nodes"
+import {Expression, objectToNode} from "./ast_node"
 
 /**
  * Apply a function func to all pairs of an array
@@ -1135,4 +1136,10 @@ function parseString(string, options = {}) {
   return rootNode
 }
 
-export {parseString}
+function parseExpression(string, options={}) {
+  const node = objectToNode(parseString(string, options))
+
+  return new Expression(string, node)
+}
+
+export {parseString, parseExpression}

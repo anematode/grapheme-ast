@@ -56,28 +56,21 @@ export function applyToNodesRecursively(topNode, func, childrenFirst = false, rt
     nodeChildIndexStack[nodeStack.length - 1] = i
   }
 
-  // Returns the second-to-last node on the stack, and null if it doesn't exist. Unused for now
-  function peekParent() {
-    const parent = nodeStack[nodeStack.length - 2]
-
-    return parent ? parent : null
-  }
-
   // Forward node to func if func has two arguments, meaning (node, parent)
-  function forwardToFunc2(node) {
-    func(node, peekParent())
+  function forwardToFunc2(node, parent) {
+    func(node, parent)
   }
 
   // Forward node to func if func has three arguments, meaning (node, parent, depth)
-  function forwardToFunc3(node) {
-    func(node, peekParent(), nodeStack.length - 1)
+  function forwardToFunc3(node, parent) {
+    func(node, parent, nodeStack.length - 1)
   }
 
   const forwardCallback = (func.length <= 1) ? func : ((func.length === 2) ? forwardToFunc2 : forwardToFunc3)
 
   // If childrenFirst is false, we need to explicitly call func on the top node, since it won't be called in the main loop
   if (!childrenFirst)
-    func(topNode, null)
+    forwardCallback(topNode, null)
 
   let currentNode
 
@@ -99,7 +92,7 @@ export function applyToNodesRecursively(topNode, func, childrenFirst = false, rt
           // child doesn't need to be recursed into, so just call the function and continue the loop. The value of
           // childrenFirst doesn't matter here.
           if (!onlyNodesWithChildren)
-            forwardCallback(child)
+            forwardCallback(child, currentNode)
         } else {
           // Check for cycles
           if (checkCycles && nodeStack.some(node => node === child))
@@ -111,7 +104,7 @@ export function applyToNodesRecursively(topNode, func, childrenFirst = false, rt
 
           // If childrenFirst is false, call func
           if (!childrenFirst)
-            forwardCallback(child)
+            forwardCallback(child, currentNode)
 
           // Add this child to the list
           nodeStack.push(child)
@@ -123,9 +116,9 @@ export function applyToNodesRecursively(topNode, func, childrenFirst = false, rt
       }
     }
 
-    // Call func on the current node. Note that this means
+    // Call func on the current node.
     if (childrenFirst)
-      forwardCallback(currentNode)
+      forwardCallback(currentNode, null)
 
     // Pop the last values in the stack, starting iteration at the parent
     nodeStack.pop()
