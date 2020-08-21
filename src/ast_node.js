@@ -1,6 +1,8 @@
 import {applyToNodesRecursively} from "./traverse_nodes"
 import {ParserError} from "./parser_error"
 
+// List of valid compilation modes (prone to expand): "double", "interval", "arbitrary"
+
 /**
  * Abstraction of a node in a Grapheme expression. This is the base class; there are a variety of node types which
  * derive from this class. All classes should support a clone() function, toJSON() function,
@@ -44,14 +46,10 @@ class ASTNode {
 }
 
 class ConstantNode extends ASTNode {
-  constructor() {
+  constructor({ value }) {
     super()
 
-    this.value = undefined
-  }
-
-  setValue(v) {
-    this.value = v
+    this.value = value
   }
 
   nodeType() {
@@ -60,10 +58,8 @@ class ConstantNode extends ASTNode {
 }
 
 class NumberNode extends ConstantNode {
-  constructor({ value }) {
-    super()
-
-    this.value = value
+  constructor(opts = {}) {
+    super(opts)
   }
 
   nodeType() {
@@ -98,8 +94,8 @@ class OperatorNode extends ASTNode {
 }
 
 class FunctionNode extends OperatorNode {
-  constructor({ name, op, implicit }) {
-    super({op, implicit})
+  constructor({ name, implicit = false }) {
+    super({op: name, implicit})
 
     this.name = name
   }
@@ -163,9 +159,9 @@ function constructNodeFromObj(obj) {
 }
 
 export class Expression {
-  constructor(string, rootNode) {
+  constructor(string, node) {
     this.string = string
-    this.rootNode = rootNode
+    this.node = node
   }
 }
 
