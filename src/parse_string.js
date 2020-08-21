@@ -268,6 +268,9 @@ function processArrowFunctionSignature(string, args) {
  *     Properties:
  *       op: a string containing the operation itself
  *       implicit: whether the operator was generated implicitly
+ *   arrow_function
+ *
+ *   type_annotation
  */
 
 // Check whether an operator (as a string) could be a prefix operator
@@ -1110,6 +1113,7 @@ function parseString(string, options = {}) {
       case "colon":
       case "typename":
       case "arrow_function_token":
+      case "type_annotation":
         throw errorInString(string, node.index, "Unprocessed token \"" + node.type + "\"", "Note: Perhaps remove the token?")
     }
   }, false, false, false)

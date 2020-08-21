@@ -343,13 +343,9 @@ export function findTemplateSpecialization(string, startIndex, charCode, maxTemp
 
         if (correspondingIndex !== -1) {
           correspondingIndex = -1
+          ++i
 
-          if (stack.length === 0) { // We're done
-            ++i
-            break main
-          }
-
-          break
+          break main
         }
 
         throw errorInString(string, i, "Unbalanced angle brackets in template specialization")

@@ -13,7 +13,7 @@ class CyclicalError extends Error {
  * all of your memory). You can avoid this by setting checkCycles=true, which will throw an error if a cycle is detected.
  * The depth of recursion is given by depth, which defaults to Infinity.
  * @param topNode
- * @param func {Function} Signature is (node, depth)
+ * @param func {Function} Signature is (node, parent, depth)
  * @param childrenFirst {boolean} Whether to call func on children first or the upper node first
  * @param rtl {boolean} Whether to call func on children from right to left or left to right
  * @param onlyNodesWithChildren {boolean} If true, only call func on nodes that have children
