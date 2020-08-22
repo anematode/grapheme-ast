@@ -1,5 +1,6 @@
 import {applyToNodesRecursively} from "./traverse_nodes"
 import {ParserError} from "./parser_error"
+import {parseString} from "./parse_string"
 
 /**
  * Abstraction of a node in a Grapheme expression. This is the base class; there are a variety of node types which
@@ -152,7 +153,7 @@ const typeClassMap = {
 function constructNodeFromObj(obj) {
   const constructor = typeClassMap[obj.type]
   if (!constructor) {
-      throw new ParserError("Huh? Can't convert token of type " + obj.type)
+    throw new ParserError("Huh? Can't convert token of type " + obj.type)
   }
 
   const node = new constructor(obj)
@@ -162,19 +163,12 @@ function constructNodeFromObj(obj) {
   return node
 }
 
-export class Expression {
-  constructor(string, rootNode) {
-    this.string = string
-    this.rootNode = rootNode
-  }
-}
-
 /**
  * Convert the result of parseString (or similar) to an ASTNode. Modifies each node's "node" property, then deletes it.
  * Also deletes each node's children property.
  * @param parsedObj
  */
-export function objectToNode(parsedObj) {
+function objectToNode(parsedObj) {
   let ret
 
   applyToNodesRecursively(parsedObj, (child, parent) => {
@@ -194,4 +188,40 @@ export function objectToNode(parsedObj) {
   }, true)
 
   return ret
+}
+
+function parseNode(string, options={}) {
+  return objectToNode(parseString(string, options))
+}
+
+function parseExpression(string, options={}) {
+  const node = parseNode(string, options)
+
+  return new Expression(string, node)
+}
+
+export class Expression {
+  constructor(string, rootNode) {
+    this.string = string
+
+    if (!rootNode)
+      rootNode = parseNode(string)
+
+    this.rootNode = rootNode
+  }
+
+  static from(string, options={}) {
+    switch (typeof string) {
+      case "number":
+      case "boolean":
+      case "bigint":
+        throw new TypeError("unimplemented")
+      case "string":
+        return parseExpression(string, options)
+      case "object":
+        return objectToNode(string)
+      default:
+        throw new TypeError("Invalid provided type")
+    }
+  }
 }
