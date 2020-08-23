@@ -44,6 +44,10 @@ class ASTNode {
   nodeType() {
     return "node"
   }
+
+  compile(compilationMode="double") {
+    
+  }
 }
 
 class ConstantNode extends ASTNode {
