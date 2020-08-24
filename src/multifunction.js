@@ -9,9 +9,21 @@ class Multifunction {
   constructor(params) {
     this.functions = Object.fromEntries(params.filter(entry => isValidCompilationMode(entry)))
 
+    const fns = Object.keys(this.functions)
+
+    if (!fns.length)
+      throw new RangeError("No functions provided")
+
     // Check types
-    if (!Object.keys(this.functions).every(fn => typeof fn === "function"))
+    if (!fns.every(fn => typeof fn === "function"))
       throw new TypeError("Non-function provided to Multifunction constructor")
+
+    const length1 = fns[0].length
+
+    // Check that all have the same argCount
+    fns.every(fn => fn.length === length1 ||
+      (throw new RangeError(`Function has the wrong number of arguments (expected ${length1}, found ${fn.length})`)))
   }
+
 
 }
