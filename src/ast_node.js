@@ -1,8 +1,24 @@
 import {applyToNodesRecursively} from "./traverse_nodes"
 import {ParserError} from "./parser_error"
 import {parseString} from "./parse_string"
+import {RealFunctions} from "./real_functions"
 
 // List of valid compilation modes (prone to expand): "double", "interval", "arbitrary"
+
+// For testing. The full set will be used when I merge this into the main repo
+const GraphemeSubset = {
+  RealFunctions
+}
+
+/**
+ * Given a function name, like IntervalFunctions.Add, RealFunctions.Multiply, etc. to look up in GraphemeSubset. Throws
+ * if the dependency is not found.
+ * @param funcName
+ */
+function resolveDependency(funcName) {
+
+}
+
 
 /**
  * Abstraction of a node in a Grapheme expression. This is the base class; there are a variety of node types which
@@ -46,7 +62,68 @@ class ASTNode {
   }
 
   compile(compilationMode="double") {
-    
+    // When we compile a node, we create the source code of a JS function which will return the value of the node.
+    // If we wish to compile a node as a function of variables, say x and y, we need to create an ArrowFunctionNode
+    // which contains the parameters x and y as arguments and the return value as its child node. Then, when the JS
+    // function is run, it will return another JS function (in the spirit of a closure) which can be used after.
+    // To the end of generating this source code correctly and without the possibility of eval() type insecurities, only
+    // a limited number of operations can be done by the children of this node to modify/add to the source code. These
+    // are:
+    // getUnusedName()
+    // setVariable(name, string)
+    // setVariableToFunctionEvaluation(name, functionName (string), arguments (Array of string arguments)) (preferred)
+    // requestDependency(funcName), something like IntervalFunctions.Add or RealFunctions.Multiply
+    // requestGlobalVariable(varName), something like "cow::a" or "my_namespace::chicken::feet", returning a string
+    //   which can be used for that global variable
+
+    let sourceCode = ""
+
+    // Id for variables
+    let nameId = 0
+
+    function getUnusedName() {
+      return "$" + (nameId++)
+    }
+
+    function setVariable(name, string) {
+      sourceCode += `${name} = ${string};\n`
+    }
+
+    function setVariableToFunctionEvaluation(name, funcName, args) {
+      sourceCode += `${name} = ${funcName}(${args.join(', ')});`
+    }
+
+    const dependencies = {}
+
+    function getDependency(funcName) {
+      let name = dependencies[funcName]
+
+      if (name)
+        return name
+
+      name = dependencies[funcName] = getUnusedName() + "_func"
+
+      setVariable(name, resolveDependency(funcName))
+    }
+
+    function requestDependency(funcName) {
+      // Remove whitespace, so the function is unambiguous
+      funcName = funcName.replace(/\s+/g, "")
+
+      return getDependency(funcName)
+    }
+
+    function requestGlobalVariable() {
+
+    }
+
+    const compileInfo = {
+      getUnusedName,
+      setVariable,
+      compilationMode
+    }
+
+
   }
 }
 
