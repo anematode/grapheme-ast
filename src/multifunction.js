@@ -10,18 +10,14 @@ class Multifunction {
     if (!funcMap)
       throw new TypeError("No arguments passed to multifunction constructor")
 
-    const compilationModes = Object.keys(funcMap)
+    let compilationModes = Object.keys(funcMap)
+
+    compilationModes = compilationModes.filter(isValidCompilationMode)
 
     if (!compilationModes.length)
-      throw new RangeError("No functions provided")
-
-    compilationModes.forEach(compilationType => {
-      if (!isValidCompilationMode(compilationType))
-        throw new TypeError("Invalid compilation type " + compilationType)
-    })
+      throw new RangeError("No valid function types provided")
 
     this.functions = funcMap
-
 
     const fns = Object.values(funcMap)
 
