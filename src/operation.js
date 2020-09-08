@@ -2,11 +2,11 @@ import {Multifunction} from "./multifunction"
 
 class Operator {
   constructor(params) {
-    this.returnType = null
-    this.signature = []
+    this.returnType = params.returnType
+    this.signature = params.signature
 
     this.multifunction = new Multifunction(params)
   }
 
-
+  
 }

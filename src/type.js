@@ -140,7 +140,7 @@ class Type {
 
   /**
    * Replace empty arrays in children with
-   * @private
+   * @public
    */
   replaceEmptyChildrenWithNull() {
     this.applyAll(child => {
