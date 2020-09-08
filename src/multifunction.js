@@ -19,6 +19,7 @@ class Multifunction {
 
     this.functions = funcMap
 
+    // Some useful type checks
     const fns = Object.values(funcMap)
 
     // Check types

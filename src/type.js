@@ -82,76 +82,6 @@ export function* typeTokenizer(string) {
 }
 
 /**
- * Class abstracting the concept of a type. For example, real, complex, bool, list::<real>, pair::<list::<real>, real>
- */
-class Type {
-  constructor(str, children = []) {
-    this.str = str
-
-    // Type checking for children
-    if (children !== null && !Array.isArray(children))
-      throw new TypeError("children must either be null or an array")
-
-    this.children = children
-  }
-
-  // Apply callback to all children. We can use recursion since Grapheme asserts that max template depth <= 512
-  applyAll(callback) {
-    callback(this)
-
-    if (this.children) {
-      this.children.forEach(child => child.applyAll(callback))
-    }
-  }
-
-  // Clone the type
-  clone() {
-    return new Type(this.str,
-      this.children ? this.children.map(child => child.clone()) : null)
-  }
-
-  // Number of template arguments in this type
-  argCount() {
-    return this.children ? this.children.length : 0
-  }
-
-  // Deep equals between Types. Could also compare by string, but that's slower
-  equals(type) {
-    if (type.str !== this.str || this.argCount() !== type.argCount())
-      return false
-
-    return this.children.every((child, i) => child.equals())
-  }
-
-  // Whether the type has a template specialization
-  hasChildren() {
-    return this.children && this.children.length !== 0
-  }
-
-  toString() {
-    let ret = this.str
-
-    if (this.hasChildren()) {
-      ret += "::<" + this.children.map(child => child.toString()).join(", ") + '>'
-    }
-
-    return ret
-  }
-
-  /**
-   * Replace empty arrays in children with
-   * @public
-   */
-  replaceEmptyChildrenWithNull() {
-    this.applyAll(child => {
-      if (!child.hasChildren()) {
-        child.children = null
-      }
-    })
-  }
-}
-
-/**
  * Convert string to Type object
  * @param string
  * @returns {Type}
@@ -243,4 +173,95 @@ function parseTypeFromTokens(tokens, originalString) {
   return ret
 }
 
-export {parseType}
+/**
+ * Class abstracting the concept of a type. For example, real, complex, bool, list::<real>, pair::<list::<real>, real>.
+ * void is a pseudo-type which represents a non-existent quantity.
+ */
+export class Type {
+  constructor(str, children = []) {
+    this.str = str
+
+    // Type checking for children
+    if (children !== null && !Array.isArray(children))
+      throw new TypeError("children must either be null or an array")
+
+    this.children = children
+  }
+
+  // Apply callback to all children. We can use recursion since Grapheme asserts that max template depth <= 512
+  applyAll(callback) {
+    callback(this)
+
+    if (this.children) {
+      this.children.forEach(child => child.applyAll(callback))
+    }
+  }
+
+  // Clone the type
+  clone() {
+    return new Type(this.str,
+      this.children ? this.children.map(child => child.clone()) : null)
+  }
+
+  // Number of template arguments in this type
+  argCount() {
+    return this.children ? this.children.length : 0
+  }
+
+  // Deep equals between Types. Could also compare by string, but that's slower
+  equals(type) {
+    if (type.str !== this.str || this.argCount() !== type.argCount())
+      return false
+
+    return this.children.every((child, i) => child.equals())
+  }
+
+  // Whether the type has a template specialization
+  hasChildren() {
+    return this.children && this.children.length !== 0
+  }
+
+  toString() {
+    let ret = this.str
+
+    if (this.hasChildren()) {
+      ret += "::<" + this.children.map(child => child.toString()).join(", ") + '>'
+    }
+
+    return ret
+  }
+
+  isVoid() {
+    return this.str === "void"
+  }
+
+  /**
+   * Replace empty arrays in children with
+   * @public
+   */
+  replaceEmptyChildrenWithNull() {
+    this.applyAll(child => {
+      if (!child.hasChildren()) {
+        child.children = null
+      }
+    })
+  }
+
+  /**
+   * Create a type dynamically from an object
+   * @param obj {Type|string}
+   * @param requireClone {boolean} Whether to clone the type if the argument happens to be another Type object
+   * @returns {Type}
+   */
+  static from(obj, requireClone=false) {
+    if (obj instanceof Type) {
+      return requireClone ? obj.clone() : obj
+    } else if (typeof obj === "string") {
+      return parseType(obj)
+    } else if (obj === null || obj === undefined) { // Type.from(nullish) = Type("void")
+      return new Type("void")
+    } else {
+      throw new TypeError("Troublesome argument to Type.from")
+    }
+  }
+}
