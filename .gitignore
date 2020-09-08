@@ -3,3 +3,4 @@
 # Ignore generated files
 # src/expression_tokenizer.js
 # src/parse_string.js
+.DS_Store
