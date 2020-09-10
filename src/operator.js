@@ -2,12 +2,17 @@ import {Multifunction} from "./multifunction"
 import {Type} from "./type"
 
 /**
- * Find the ith item of the infinite sequence a, b, ..., z, aa, ab, ..., zz, aaa, ...
+ * Find the ith item of the 0-indexed infinite sequence a, b, ..., z, aa, ab, ..., zz, aaa, ...
  * Credit to https://stackoverflow.com/questions/181596/how-to-convert-a-column-number-e-g-127-into-an-excel-column-e-g-aa
  * @param i
  * @returns {string}
  */
 function getArgOfIndex(i) {
+  if (typeof i !== "number" || i < 0 || !Number.isInteger(i))
+    throw new TypeError("Invalid argument")
+
+  ++i
+
   let dividend = i
   let ret = ""
   let modulo = 0
@@ -28,9 +33,8 @@ function getArgOfIndex(i) {
 function getDefaultArgNames(len) {
   const arr = []
 
-  for (let i = 0; i < len; ++i) {
+  for (let i = 0; i < len; ++i)
     arr.push(getArgOfIndex(i))
-  }
 
   return arr
 }
