@@ -1,12 +1,20 @@
-const fallbackIdentity = x => x
-const fallbackMulti = new Multifunction({
+import {validCompilationModes} from "./compilation_mode"
 
-})
 
-  /**
- * Provides information about a given type, including checking for validity, checking if a
+const fallbackTypecheck = Object.assign(() => true, { cost: 0 })
+
+const multiParams = {}
+
+for (let key in validCompilationModes) {
+  multiParams[key] = fallbackTypecheck
+}
+
+const fallbackTypecheckMulti = new Multifunction(multiParams)
+
+/**
+ * Provides information about a given type. Should only be used internally
  */
-class TypeDefinition {
+export class TypeDefinition {
   constructor(params={}) {
     // Parameters:
     // name: The name of the type. e.g. "complex", "real", "list"
@@ -19,11 +27,9 @@ class TypeDefinition {
     // it doesn't check whether every element is defined.
 
     this.name = params.name
-    if (!this.name)
-      throw new TypeError("No name provided")
+    this.supportedCompilationModes = params.supportedCompilationModes
 
-    this.supportedCompilationModes
-
-    this.checkValid = params.checkValid ? params.checkValid : new Multifunction
+    this.checkValid = params.checkValid
+    this.isInstance = params.isInstance
   }
 }
