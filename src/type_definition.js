@@ -1,15 +1,5 @@
 import {validCompilationModes} from "./compilation_mode"
-
-
-const fallbackTypecheck = Object.assign(() => true, { cost: 0 })
-
-const multiParams = {}
-
-for (let key in validCompilationModes) {
-  multiParams[key] = fallbackTypecheck
-}
-
-const fallbackTypecheckMulti = new Multifunction(multiParams)
+import {Multifunction} from "./multifunction"
 
 /**
  * Provides information about a given type. Should only be used internally
@@ -17,12 +7,13 @@ const fallbackTypecheckMulti = new Multifunction(multiParams)
 export class TypeDefinition {
   constructor(params={}) {
     // Parameters:
-    // name: The name of the type. e.g. "complex", "real", "list"
-    // checkValid: A function called with the Type instance which checks whether it is valid. It does NOT have the
+    // name (string): The name of the type. e.g. "complex", "real", "list"
+    // checkValid (Function -> Function): A function; when passed the template arguments of the type, it will return another
+    // function which, when called with the Type instance, checks whether it is valid. This returned fn does NOT have the
     // responsibility of checking whether its child types are valid.
-    // isInstance: Check whether an object is a valid instance of this type. Note that this will include conventional
+    // isInstance: Fn returning Multifunction that checks whether an object is a valid instance of this type. Note that this will include conventional
     // undefined values such as null for vec2 and NaN for real
-    // isDefined: Check whether an object is a defined instance of this type. For example, vec2(NaN, y), vec2(x, NaN)
+    // isDefined: Fn returning Multifunction whether an object is a defined instance of this type. For example, vec2(NaN, y), vec2(x, NaN)
     // are both undefined forms of the type. list::<vec2>::isDefined([ vec2(NaN, 0), vec2(1, 1) ]) is still true though;
     // it doesn't check whether every element is defined.
 
@@ -31,5 +22,8 @@ export class TypeDefinition {
 
     this.checkValid = params.checkValid
     this.isInstance = params.isInstance
+    this.isDefined = params.isDefined
+
+    this.description = params.description
   }
 }
